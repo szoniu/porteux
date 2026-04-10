@@ -190,15 +190,216 @@ Identical to Void installer: `disk_plan_auto()` / `disk_plan_dualboot()` → `di
 
 Bundled in `data/gum.tar.gz`. Priority: gum > dialog > whiptail. Static binary, zero dependencies.
 
-## Running tests
+## Testing plan
+
+### Unit tests (offline, no root, no hardware)
 
 ```bash
-bash tests/test_config.sh        # Config round-trip
-bash tests/test_hardware.sh      # GPU database
-bash tests/test_disk.sh          # Disk planning dry-run
+bash tests/test_config.sh        # Config save/load round-trip + validation
+bash tests/test_hardware.sh      # GPU database lookups (TODO)
+bash tests/test_disk.sh          # Disk planning dry-run with sfdisk scripts (TODO)
+bash tests/test_checkpoint.sh    # Checkpoint set/reached/clear/validate (TODO)
 ```
 
-All tests use `DRY_RUN=1` and `NON_INTERACTIVE=1`.
+All unit tests use `DRY_RUN=1` and `NON_INTERACTIVE=1`. They must:
+- Export `_PORTEUX_INSTALLER=1`
+- Never require root or hardware
+- Use `_RESUME_TEST_DIR` for fake filesystems where needed
+
+### Integration tests (VM, requires root)
+
+These tests should be run in a QEMU/KVM or VirtualBox VM with networking:
+
+#### Test 1: Full dry-run wizard
+```bash
+./install.sh --dry-run
+# Verify: all 16 TUI screens render, config file is generated, no disk operations
+```
+
+#### Test 2: Config round-trip
+```bash
+./install.sh --configure                              # Generate config
+cat /tmp/porteux-installer.conf                       # Verify all variables saved
+./install.sh --install --config /tmp/porteux-installer.conf --dry-run  # Verify load
+```
+
+#### Test 3: Full installation on empty disk (QEMU)
+```bash
+# Host: create test VM
+qemu-img create -f qcow2 test-porteux.qcow2 20G
+qemu-system-x86_64 -m 4096 -smp 4 \
+    -drive file=test-porteux.qcow2,format=qcow2 \
+    -cdrom <any-live-iso>.iso \
+    -bios /usr/share/ovmf/OVMF.fd \
+    -enable-kvm -nic user
+
+# Inside VM:
+git clone https://github.com/szoniu/porteux.git && cd porteux
+./install.sh
+# Select: auto partition → /dev/vda → ext4 → kde → persistent → normal boot
+# Verify: ISO downloads, extracts, bootloader installs, reboot works
+```
+
+#### Test 4: Installation on empty disk (BIOS mode)
+```bash
+# Same as Test 3 but without -bios OVMF (legacy BIOS)
+# Verify: syslinux installed, MBR written, boots correctly
+```
+
+#### Test 5: Dual-boot with existing Linux
+```bash
+# Pre-install another Linux on /dev/vda1-vda2
+# Run PorteuX installer with dual-boot scheme
+# Verify: ESP reused, GRUB detects both OSes, both boot
+```
+
+#### Test 6: Resume after interruption
+```bash
+./install.sh
+# Let it run through disk partitioning + ISO download
+# Kill with Ctrl+C during ISO extraction
+./install.sh --resume
+# Verify: resumes from iso_extract, doesn't re-partition or re-download
+```
+
+#### Test 7: Persistence verification
+```bash
+# After full install, boot into PorteuX
+# Create a file: touch /root/test-persistence
+# Reboot
+# Verify: /root/test-persistence still exists (persistence mode)
+```
+
+#### Test 8: Immutable mode verification
+```bash
+# Install with PERSISTENCE_MODE=none
+# Boot, create file, reboot
+# Verify: file is gone (immutable mode)
+```
+
+#### Test 9: Copy to RAM mode
+```bash
+# Install with BOOT_MODE=copy2ram
+# Boot, verify system loads into RAM
+# Remove boot media (or unmount)
+# Verify: system still works
+```
+
+#### Test 10: Optional modules
+```bash
+# Install with ENABLE_DEVEL_MODULE=yes
+# Verify: 05-devel.xzm present in /porteux/optional/
+# Activate: activate 05-devel.xzm
+# Verify: gcc --version works
+```
+
+#### Test 11: NVIDIA module download
+```bash
+# Install on VM with NVIDIA GPU passthrough (or just test download)
+# Select NVIDIA_MODULE=yes
+# Verify: nvidia-driver.xzm downloaded to /porteux/optional/
+```
+
+#### Test 12: User setup on first boot
+```bash
+# After install, boot into PorteuX
+# Verify: root password changed from default "toor"
+# Verify: user account exists with correct groups
+# Verify: /etc/.porteux-setup-done marker exists
+```
+
+#### Test 13: SSH remote installation
+```bash
+# Boot Live ISO on target machine
+# Configure SSH (see README)
+# From remote machine: ssh root@<IP> and run installer
+# Verify: entire wizard works over SSH, installation completes
+```
+
+#### Test 14: Preset save/load across machines
+```bash
+# Machine A: ./install.sh --configure → save preset
+# Machine B: ./install.sh --config preset.conf --dry-run
+# Verify: portable values loaded, hardware values re-detected
+```
+
+#### Test 15: All 8 desktop variants
+```bash
+# For each variant in {kde,xfce,lxqt,cinnamon,mate,gnome,lxde,cosmic}:
+#   - Install with DESKTOP_VARIANT=<variant>
+#   - Verify: correct ISO downloaded, boots to correct desktop
+```
+
+#### Test 16: FAT32 filesystem (USB portability)
+```bash
+# Install with FILESYSTEM=fat32 on a USB drive
+# Boot from USB on different machines
+# Verify: PorteuX boots, modules load correctly
+```
+
+### Edge cases to test
+
+- Installer run without network → should fail at preflight with clear message
+- Installer run as non-root → should fail at preflight
+- Disk with existing partitions → cleanup_target_disk should handle
+- Very small disk (< 4 GiB) → should reject at disk_select
+- SourceForge download redirect (302) → curl -L should follow
+- Interrupted ISO download → resume should re-download
+- Invalid ISO (truncated) → iso_verify should catch (size check)
+- gum binary missing → should fall back to dialog/whiptail/text
+
+## SSH remote installation
+
+PorteuX (Slackware-based) uses sysvinit, not runit. SSH setup differs from Void:
+
+```bash
+# On target machine (booted from PorteuX Live or any Live ISO):
+
+# 1. Set root password
+passwd root
+
+# 2. Start sshd (PorteuX Live may have it pre-installed)
+# If sshd is available:
+chmod +x /etc/rc.d/rc.sshd    # Slackware: make executable = enable
+/etc/rc.d/rc.sshd start
+
+# If sshd is NOT available (e.g. running from another Live ISO):
+# Install openssh for that distro, then start sshd
+
+# 3. Allow root login (if not already)
+sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+/etc/rc.d/rc.sshd restart
+
+# 4. Check IP
+ip -4 addr show | grep inet
+
+# 5. Verify
+ss -tlnp | grep 22    # should show LISTEN
+```
+
+From remote machine:
+```bash
+ssh root@<IP>
+git clone https://github.com/szoniu/porteux.git
+cd porteux
+
+# IMPORTANT: Always use tmux/screen to protect against SSH disconnection
+tmux new -s install
+./install.sh
+```
+
+If SSH connection drops:
+```bash
+ssh root@<IP>
+tmux attach -t install
+# Installation continues in background — nothing lost
+```
+
+Monitoring from second terminal:
+```bash
+ssh root@<IP>
+tail -f /tmp/porteux-installer.log
+```
 
 ## Known patterns and pitfalls
 

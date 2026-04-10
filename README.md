@@ -149,6 +149,86 @@ Po przerwie w zasilaniu lub błędzie:
 
 Instalator zapamiętuje ukończone fazy i wznawia od ostatniej nieukończonej.
 
+## Zdalna instalacja przez SSH
+
+Możesz uruchomić instalator zdalnie przez SSH — przydatne gdy maszyna docelowa nie ma monitora lub klawiatury.
+
+### Na maszynie docelowej (bootowanej z Live ISO)
+
+```bash
+# 1. Ustaw hasło root
+passwd root
+
+# 2. Uruchom sshd
+# PorteuX Live (Slackware — sysvinit):
+chmod +x /etc/rc.d/rc.sshd
+/etc/rc.d/rc.sshd start
+
+# Jeśli bootujesz z innego Live ISO (np. Void):
+# xbps-install -Sy openssh && ssh-keygen -A
+# echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+# ln -sf /etc/sv/sshd /var/service/sshd
+
+# 3. Zezwól na logowanie root (jeśli zablokowane)
+sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+/etc/rc.d/rc.sshd restart
+
+# 4. Sprawdź IP
+ip -4 addr show | grep inet
+
+# 5. Zweryfikuj
+ss -tlnp | grep 22    # powinno: LISTEN
+```
+
+### Z innego komputera
+
+```bash
+ssh root@<IP-maszyny-docelowej>
+git clone https://github.com/szoniu/porteux.git
+cd porteux
+./install.sh
+```
+
+### Użyj tmux — ochrona przed zerwaniem SSH
+
+**Ważne:** Jeśli połączenie SSH się zerwie, instalacja w zwykłej sesji zostanie przerwana. **Zawsze uruchamiaj installer w tmux:**
+
+```bash
+# Na maszynie docelowej (po połączeniu SSH):
+# Jeśli tmux nie jest zainstalowany: installpkg tmux (Slackware) lub pobierz statyczną wersję
+tmux new -s install
+
+# Sklonuj i uruchom
+git clone https://github.com/szoniu/porteux.git
+cd porteux
+./install.sh
+```
+
+Jeśli połączenie SSH się zerwie:
+```bash
+# Połącz się ponownie
+ssh root@<IP>
+tmux attach -t install
+```
+
+Instalacja nadal działa w tle — nic nie stracisz.
+
+### Monitorowanie z drugiego połączenia
+
+```bash
+ssh root@<IP>
+
+# Logi w czasie rzeczywistym
+tail -f /tmp/porteux-installer.log
+```
+
+### Rozwiązywanie problemów z SSH
+
+- **`Connection reset by peer`** — sshd nie działa. Sprawdź: `/etc/rc.d/rc.sshd status` (Slackware) lub `ss -tlnp | grep 22`.
+- **`Permission denied (publickey)`** — dodaj `PermitRootLogin yes` do `/etc/ssh/sshd_config` i restartuj sshd.
+- **`Permission denied, please try again`** — hasło nie ustawione. Uruchom `passwd root` na maszynie docelowej.
+- **Brak tmux na Live ISO** — użyj `screen` jako alternatywę, lub pobierz statyczny tmux: `curl -LO https://github.com/tmux/tmux/releases/...`
+
 ## Menu naprawcze
 
 Gdy komenda zawiedzie, instalator wyświetla menu:
