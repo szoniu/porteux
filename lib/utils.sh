@@ -135,7 +135,7 @@ check_dependencies() {
         curl
         tar
         sha256sum
-        chroot
+        bc
     )
 
     for dep in "${required_deps[@]}"; do
@@ -174,7 +174,7 @@ is_root() {
 
 # ensure_dns — Add fallback nameserver if DNS resolution fails
 ensure_dns() {
-    if ! ping -c 1 -W 3 voidlinux.org &>/dev/null && ! ping -c 1 -W 3 google.com &>/dev/null; then
+    if ! ping -c 1 -W 3 cloudflare.com &>/dev/null && ! ping -c 1 -W 3 google.com &>/dev/null; then
         # Ping failed — check if it's a DNS issue (raw IP works?)
         if ping -c 1 -W 3 8.8.8.8 &>/dev/null; then
             ewarn "DNS resolution failed, adding fallback nameserver 8.8.8.8"
@@ -187,7 +187,7 @@ ensure_dns() {
 
 # has_network — Check basic network connectivity
 has_network() {
-    ping -c 1 -W 3 voidlinux.org &>/dev/null || \
+    ping -c 1 -W 3 cloudflare.com &>/dev/null || \
     ping -c 1 -W 3 google.com &>/dev/null
 }
 
@@ -220,14 +220,10 @@ checkpoint_validate() {
             return 1 ;;  # always re-run (fast)
         disks)
             [[ -b "${ROOT_PARTITION:-}" ]] && mountpoint -q "${MOUNTPOINT}" 2>/dev/null ;;
-        rootfs_extract)
-            [[ -f "${MOUNTPOINT}/usr/bin/xbps-install" ]] ;;
-        xbps_preconfig)
-            [[ -d "${MOUNTPOINT}/etc/xbps.d/" ]] ;;
-        rootfs_download|rootfs_verify)
-            ls "${MOUNTPOINT}"/porteux-x86_64-ROOTFS-*.tar.xz &>/dev/null 2>&1 ;;
-        chroot)
-            [[ -f "${MOUNTPOINT}${CHECKPOINT_DIR_SUFFIX}/finalize" ]] ;;
+        iso_extract)
+            [[ -d "${MOUNTPOINT}/porteux" ]] ;;
+        iso_download|iso_verify)
+            ls "${MOUNTPOINT}"/tmp/PorteuX-*.iso &>/dev/null 2>&1 ;;
         kernel)
             ls "${MOUNTPOINT}/boot/vmlinuz-"* &>/dev/null 2>&1 || ls /boot/vmlinuz-* &>/dev/null 2>&1 ;;
         *)
@@ -556,82 +552,11 @@ _infer_from_fstab() {
 }
 
 # _infer_from_xbps_conf — Parse /etc/xbps.d/*.conf for mirror URL and nonfree repo
-_infer_from_xbps_conf() {
-    local mp="$1"
-    local confdir="${mp}/etc/xbps.d"
-    [[ -d "${confdir}" ]] || return 0
+# _infer_from_xbps_conf — Not applicable for PorteuX (Void Linux relic, kept as no-op)
+_infer_from_xbps_conf() { return 0; }
 
-    local f line
-    for f in "${confdir}"/*.conf; do
-        [[ -f "${f}" ]] || continue
-        while IFS= read -r line; do
-            [[ "${line}" =~ ^[[:space:]]*# ]] && continue
-            [[ -z "${line}" || "${line}" =~ ^[[:space:]]*$ ]] && continue
-
-            # repository= lines contain mirror URLs
-            if [[ "${line}" =~ ^repository= ]]; then
-                local url="${line#repository=}"
-                # Check for nonfree repo
-                if [[ "${url}" == *"/nonfree"* ]]; then
-                    ENABLE_NONFREE="yes"
-                    export ENABLE_NONFREE
-                fi
-                # Extract base mirror URL (strip /current, /current/nonfree etc.)
-                if [[ -z "${MIRROR_URL:-}" && "${url}" != *"/nonfree"* ]]; then
-                    # e.g. https://repo-default.voidlinux.org/current -> https://repo-default.voidlinux.org
-                    local base_url="${url%/current*}"
-                    if [[ -n "${base_url}" ]]; then
-                        MIRROR_URL="${base_url}"
-                        export MIRROR_URL
-                    fi
-                fi
-            fi
-        done < "${f}"
-    done
-}
-
-# _infer_from_rc_conf — Parse /etc/rc.conf for HOSTNAME, KEYMAP, TIMEZONE
-_infer_from_rc_conf() {
-    local mp="$1"
-    local rcconf="${mp}/etc/rc.conf"
-    [[ -f "${rcconf}" ]] || return 0
-
-    local line varname value
-    while IFS= read -r line; do
-        [[ "${line}" =~ ^[[:space:]]*# ]] && continue
-        [[ -z "${line}" || "${line}" =~ ^[[:space:]]*$ ]] && continue
-        [[ "${line}" == *=* ]] || continue
-
-        varname="${line%%=*}"
-        value="${line#*=}"
-        # Strip surrounding quotes
-        value="${value#\"}"
-        value="${value%\"}"
-        value="${value#\'}"
-        value="${value%\'}"
-
-        case "${varname}" in
-            HOSTNAME)
-                if [[ -n "${value}" && -z "${HOSTNAME:-}" ]]; then
-                    HOSTNAME="${value}"
-                    export HOSTNAME
-                fi
-                ;;
-            KEYMAP)
-                if [[ -n "${value}" && -z "${KEYMAP:-}" ]]; then
-                    KEYMAP="${value}"
-                    export KEYMAP
-                fi
-                ;;
-            TIMEZONE)
-                if [[ -n "${value}" && -z "${TIMEZONE:-}" ]]; then
-                    TIMEZONE="${value}"
-                    export TIMEZONE
-                fi
-                ;;
-        esac
-    done < "${rcconf}"
-}
+# _infer_from_rc_conf — Not applicable for PorteuX (Void Linux relic, kept as no-op)
+_infer_from_rc_conf() { return 0; }
 
 # _infer_from_hostname — Read hostname from system config
 _infer_from_hostname() {
@@ -722,58 +647,15 @@ _infer_from_keymap() {
     fi
 }
 
-# _infer_kernel_type — Detect kernel type from installed xbps packages
-_infer_kernel_type() {
-    local mp="$1"
-    local pkgdb="${mp}/var/db/xbps"
-    [[ -d "${pkgdb}" ]] || return 0
+# _infer_kernel_type — Not applicable for PorteuX (kernel comes in ISO module)
+_infer_kernel_type() { return 0; }
 
-    # Check for linux-lts package (e.g. .linux-lts-6.1.XXX_1.x86_64.plist)
-    if ls "${pkgdb}"/.linux-lts-* &>/dev/null 2>&1; then
-        KERNEL_TYPE="lts"
-        export KERNEL_TYPE
-        return 0
-    fi
-
-    # Check for Surface-patched kernel (vmlinuz with "surface" in name)
-    local vmlinuz
-    for vmlinuz in "${mp}"/boot/vmlinuz-*surface*; do
-        if [[ -f "${vmlinuz}" ]]; then
-            KERNEL_TYPE="surface-patched"
-            export KERNEL_TYPE
-            return 0
-        fi
-    done
-
-    # Check for default linux package (e.g. .linux-6.x.y_1.x86_64.plist)
-    # PorteuX's mainline kernel package is "linux" (no "mainline" suffix)
-    if ls "${pkgdb}"/.linux-[0-9]* &>/dev/null 2>&1; then
-        KERNEL_TYPE="mainline"
-        export KERNEL_TYPE
-        return 0
-    fi
-}
-
-# _infer_swap_type — Detect swap type if fstab didn't have swap partition
+# _infer_swap_type — Detect swap type from target partition
 _infer_swap_type() {
     local mp="$1"
 
     # Already set from fstab?
     [[ -n "${SWAP_TYPE:-}" ]] && return 0
-
-    # zramen runit service (PorteuX zram)
-    if [[ -d "${mp}/etc/sv/zramen" ]]; then
-        SWAP_TYPE="zram"
-        export SWAP_TYPE
-        return 0
-    fi
-
-    # zram service symlink in runsvdir
-    if [[ -L "${mp}/var/service/zramen" ]] || [[ -L "${mp}/etc/runit/runsvdir/default/zramen" ]]; then
-        SWAP_TYPE="zram"
-        export SWAP_TYPE
-        return 0
-    fi
 
     # swap file
     if [[ -f "${mp}/var/swapfile" ]] || [[ -f "${mp}/swapfile" ]]; then
@@ -808,7 +690,7 @@ _infer_partition_scheme() {
 }
 
 # _infer_sufficient_config — Check if inferred config has minimum required vars
-# PorteuX always uses runit — no INIT_SYSTEM requirement
+# PorteuX uses sysvinit — no INIT_SYSTEM requirement
 _infer_sufficient_config() {
     [[ -n "${ROOT_PARTITION:-}" ]] || return 1
     [[ -n "${ESP_PARTITION:-}" ]] || return 1
@@ -941,5 +823,6 @@ get_cpu_count() {
 generate_password_hash() {
     local password="$1"
     openssl passwd -6 -stdin <<< "${password}" 2>/dev/null || \
-    VOID_PW="${password}" python3 -c "import hashlib, os, base64; pw=os.environ['VOID_PW'].encode(); salt=os.urandom(16); h=hashlib.sha512(salt+pw).digest(); print('\$6\$'+base64.b64encode(salt).decode()[:16]+'\$'+base64.b64encode(h).decode()[:86])" 2>/dev/null
+    mkpasswd -m sha-512 --stdin <<< "${password}" 2>/dev/null || \
+    { eerror "Cannot generate password hash: neither openssl nor mkpasswd available"; return 1; }
 }

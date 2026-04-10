@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gpu_database.sh — GPU vendor detection and NVIDIA generation database for Void Linux
+# gpu_database.sh — GPU vendor detection and NVIDIA generation database for PorteuX
 source "${LIB_DIR}/protection.sh"
 
 # PCI Vendor IDs

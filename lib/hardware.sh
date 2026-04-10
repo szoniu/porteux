@@ -5,7 +5,7 @@ source "${LIB_DIR}/protection.sh"
 # --- CPU Detection ---
 
 # detect_cpu — Detect CPU vendor, model name, core count
-# No CPU_MARCH detection (Void uses binary packages, not source-compiled)
+# No CPU_MARCH detection (PorteuX uses binary packages, not source-compiled)
 detect_cpu() {
     CPU_VENDOR=$(grep -m1 'vendor_id' /proc/cpuinfo 2>/dev/null | awk -F': ' '{print $2}') || CPU_VENDOR="unknown"
     CPU_MODEL=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | awk -F': ' '{print $2}') || CPU_MODEL="unknown"

@@ -39,7 +39,7 @@ screen_preset_load() {
         browse)
             local -a presets=()
             local f
-            for f in "${SCRIPT_DIR}/presets"/*.conf; do
+            for f in "${SCRIPT_DIR}/presets"/*.conf "${SCRIPT_DIR}/presets"/*.conf.example; do
                 [[ -f "${f}" ]] || continue
                 presets+=("$(basename "${f}")" "$(head -5 "${f}" | grep '^# ' | tail -1 | sed 's/^# //')")
             done

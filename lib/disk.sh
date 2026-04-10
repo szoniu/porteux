@@ -98,15 +98,19 @@ disk_plan_auto() {
     case "${fs}" in
         ext4)
             disk_plan_add "Format root as ext4" \
-                mkfs.ext4 -L void "${ROOT_PARTITION}"
+                mkfs.ext4 -L porteux "${ROOT_PARTITION}"
             ;;
         btrfs)
             disk_plan_add "Format root as btrfs" \
-                mkfs.btrfs -f -L void "${ROOT_PARTITION}"
+                mkfs.btrfs -f -L porteux "${ROOT_PARTITION}"
             ;;
         xfs)
             disk_plan_add "Format root as XFS" \
-                mkfs.xfs -f -L void "${ROOT_PARTITION}"
+                mkfs.xfs -f -L porteux "${ROOT_PARTITION}"
+            ;;
+        fat32)
+            disk_plan_add "Format root as FAT32" \
+                mkfs.vfat -F 32 -n PORTEUX "${ROOT_PARTITION}"
             ;;
     esac
 
@@ -310,15 +314,15 @@ disk_plan_dualboot() {
     case "${fs}" in
         ext4)
             disk_plan_add "Format root as ext4" \
-                mkfs.ext4 -L void "${ROOT_PARTITION}"
+                mkfs.ext4 -L porteux "${ROOT_PARTITION}"
             ;;
         btrfs)
             disk_plan_add "Format root as btrfs" \
-                mkfs.btrfs -f -L void "${ROOT_PARTITION}"
+                mkfs.btrfs -f -L porteux "${ROOT_PARTITION}"
             ;;
         xfs)
             disk_plan_add "Format root as XFS" \
-                mkfs.xfs -f -L void "${ROOT_PARTITION}"
+                mkfs.xfs -f -L porteux "${ROOT_PARTITION}"
             ;;
     esac
 

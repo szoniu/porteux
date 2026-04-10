@@ -239,13 +239,4 @@ _update_syslinux_config() {
     esac
 }
 
-# _partition_to_disk — Extract disk device from partition path
-# /dev/sda1 → /dev/sda, /dev/nvme0n1p1 → /dev/nvme0n1
-_partition_to_disk() {
-    local part="$1"
-    if [[ "${part}" =~ (nvme|mmcblk|loop) ]]; then
-        echo "${part}" | sed 's/p[0-9]*$//'
-    else
-        echo "${part}" | sed 's/[0-9]*$//'
-    fi
-}
+# _partition_to_disk — defined in lib/utils.sh

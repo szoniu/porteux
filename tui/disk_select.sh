@@ -363,7 +363,7 @@ Required partitions:\n\
 After partitioning, type 'exit' to return.\n\
 You will then be asked to specify partition paths."
 
-            PS1="(void-partition) \w \$ " bash --norc --noprofile || true
+            PS1="(porteux-partition) \w \$ " bash --norc --noprofile || true
 
             ESP_PARTITION=$(dialog_inputbox "ESP Partition" \
                 "Enter the path to the ESP partition:" \

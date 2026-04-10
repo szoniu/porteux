@@ -89,7 +89,10 @@ iso_verify() {
     fi
 
     # Try to download checksums
-    local checksum_url="${PORTEUX_DOWNLOAD_BASE}/${DESKTOP_VARIANT}/sha256sum.txt"
+    # Checksum lives alongside the ISO (same path prefix as iso_get_url)
+    local iso_dir
+    iso_dir=$(dirname "${ISO_URL:-}")
+    local checksum_url="${iso_dir}/sha256sum.txt"
     local checksum_file="${iso_path}.sha256"
 
     if curl -fsSL --max-time 10 -o "${checksum_file}" "${checksum_url}" 2>/dev/null; then

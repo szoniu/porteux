@@ -1,4 +1,4 @@
-# Void Linux TUI Installer — modern dark theme
+# PorteuX TUI Installer — modern dark theme
 # Set via: export DIALOGRC=/path/to/dialogrc
 
 use_shadow = OFF

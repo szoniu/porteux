@@ -43,7 +43,7 @@ config_load() {
 
     # Build a filtered file with only known CONFIG_VARS assignments
     local safe_file
-    safe_file=$(mktemp "${TMPDIR:-/tmp}/void-config-safe.XXXXXX")
+    safe_file=$(mktemp "${TMPDIR:-/tmp}/porteux-config-safe.XXXXXX")
 
     local line_num=0
     while IFS= read -r line; do
@@ -137,7 +137,7 @@ validate_config() {
     # --- Required variables (must be non-empty) ---
     local -a required=(
         TARGET_DISK FILESYSTEM HOSTNAME TIMEZONE LOCALE
-        KERNEL_TYPE GPU_VENDOR USERNAME ROOT_PASSWORD_HASH USER_PASSWORD_HASH
+        GPU_VENDOR USERNAME ROOT_PASSWORD_HASH USER_PASSWORD_HASH
     )
     local var
     for var in "${required[@]}"; do
@@ -153,13 +153,13 @@ validate_config() {
     fi
 
     if [[ -n "${FILESYSTEM:-}" ]] && \
-       [[ "${FILESYSTEM}" != "ext4" && "${FILESYSTEM}" != "btrfs" && "${FILESYSTEM}" != "xfs" ]]; then
-        errors+=("FILESYSTEM='${FILESYSTEM}' — must be ext4, btrfs, or xfs")
+       [[ "${FILESYSTEM}" != "ext4" && "${FILESYSTEM}" != "btrfs" && "${FILESYSTEM}" != "xfs" && "${FILESYSTEM}" != "fat32" ]]; then
+        errors+=("FILESYSTEM='${FILESYSTEM}' — must be ext4, btrfs, xfs, or fat32")
     fi
 
     if [[ -n "${SWAP_TYPE:-}" ]] && \
-       [[ "${SWAP_TYPE}" != "zram" && "${SWAP_TYPE}" != "partition" && "${SWAP_TYPE}" != "file" && "${SWAP_TYPE}" != "none" ]]; then
-        errors+=("SWAP_TYPE='${SWAP_TYPE}' — must be zram, partition, file, or none")
+       [[ "${SWAP_TYPE}" != "partition" && "${SWAP_TYPE}" != "file" && "${SWAP_TYPE}" != "none" ]]; then
+        errors+=("SWAP_TYPE='${SWAP_TYPE}' — must be partition, file, or none")
     fi
 
     if [[ -n "${DESKTOP_VARIANT:-}" ]]; then
