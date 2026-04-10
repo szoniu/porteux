@@ -1,0 +1,197 @@
+# PorteuX TUI Installer
+
+Interaktywny instalator TUI (Terminal User Interface) dla [PorteuX](https://github.com/porteux/porteux) — lekkiej, modularnej dystrybucji Linuksa opartej na Slackware.
+
+## Czym jest PorteuX?
+
+PorteuX to szybka, modularna i przenośna dystrybucja oparta na Slackware current (rolling). System składa się z modułów squashfs (.xzm) nakładanych warstwami przez AUFS:
+
+- **Superszybki** — LXQt bootuje w ~3 sekundy
+- **Modularny** — system = zestaw modułów .xzm, aktywowanych/deaktywowanych w locie
+- **Przenośny** — uruchom z USB, SSD, a nawet z RAM (Copy to RAM)
+- **Opcjonalnie niezmienny** — tryb "Always Fresh" resetuje system przy każdym restarcie
+- **8 wariantów desktopowych** — KDE, Xfce, LXQt, Cinnamon, MATE, GNOME, LXDE, COSMIC
+
+## Wymagania
+
+- **Komputer** z procesorem x86-64 (SSE4.2)
+- **Pamięć RAM**: 2+ GB (4+ GB dla Copy to RAM)
+- **Dysk**: 4+ GB wolnego miejsca
+- **Internet** (do pobrania ISO)
+- **Bootowalny pendrive** z dowolnym Linux Live ISO (do uruchomienia instalatora)
+- **UEFI** lub **BIOS** (oba obsługiwane)
+
+## Szybki start
+
+```bash
+# 1. Uruchom dowolne Live ISO z dostępem do internetu
+# 2. Sklonuj repozytorium
+git clone https://github.com/<user>/porteux-installer.git
+cd porteux-installer
+
+# 3. Uruchom instalator jako root
+sudo ./install.sh
+```
+
+## Tryby uruchomienia
+
+```bash
+./install.sh              # Pełna instalacja (wizard + instalacja)
+./install.sh --configure  # Tylko konfiguracja (generuje plik .conf)
+./install.sh --install    # Tylko instalacja (z istniejącym .conf)
+./install.sh --resume     # Wznów przerwaną instalację
+./install.sh --dry-run    # Symulacja (bez destrukcyjnych operacji)
+```
+
+### Opcje
+
+| Opcja | Opis |
+|---|---|
+| `--config FILE` | Użyj podanego pliku konfiguracji |
+| `--dry-run` | Symulacja bez destrukcyjnych operacji |
+| `--force` | Kontynuuj mimo nieudanych sprawdzeń |
+| `--non-interactive` | Przerwij przy błędzie (bez menu naprawczego) |
+
+## Ekrany TUI (16 kroków)
+
+1. **Witaj** — sprawdzenie wymagań (root, sieć, EFI/BIOS)
+2. **Preset** — załaduj zapisaną konfigurację lub zacznij od nowa
+3. **Sprzęt** — automatyczna detekcja CPU, GPU, dysków, peryferiów
+4. **Dysk** — wybór dysku docelowego, schemat partycji (auto/dual-boot/manual)
+5. **System plików** — ext4, FAT32, btrfs, XFS
+6. **Swap** — brak, partycja, plik
+7. **Desktop** — 8 wariantów: KDE, Xfce, LXQt, Cinnamon, MATE, GNOME, LXDE, COSMIC
+8. **GPU** — konfiguracja sterowników, opcjonalny moduł NVIDIA
+9. **Persystencja** — persistent (zmiany zachowane) / immutable (zawsze świeży)
+10. **Tryb boot** — normalny, Copy to RAM, Always Fresh, tekst
+11. **Moduły** — opcjonalne moduły: devel, multilanguage, multilib
+12. **Sieć** — hostname
+13. **Lokalizacja** — strefa czasowa, locale, keymap
+14. **Użytkownicy** — hasło root, konto użytkownika
+15. **Preset** — opcjonalny zapis konfiguracji
+16. **Podsumowanie** — przegląd + potwierdzenie YES + odliczanie
+
+## Fazy instalacji
+
+| # | Faza | Opis |
+|---|---|---|
+| 1 | Preflight | Sprawdzenie wymagań systemowych |
+| 2 | Dyski | Partycjonowanie (sfdisk), formatowanie, montowanie |
+| 3 | ISO download | Pobranie PorteuX ISO dla wybranego desktopu |
+| 4 | ISO verify | Weryfikacja SHA256 (jeśli dostępna) |
+| 5 | ISO extract | Ekstrakcja zawartości ISO na partycję |
+| 6 | Bootloader | GRUB (EFI) lub syslinux (BIOS) |
+| 7 | Persystencja | Konfiguracja katalogu zmian AUFS |
+| 8 | Moduły | Pobranie opcjonalnych modułów .xzm |
+| 9 | System | Hostname, timezone, locale, keymap |
+| 10 | Użytkownicy | Skrypt first-boot z konfiguracją kont |
+| 11 | Finalizacja | Weryfikacja modułów, sync, cleanup |
+
+## Detekcja sprzętu
+
+Instalator automatycznie wykrywa:
+- **CPU** — producent, model, liczba rdzeni
+- **GPU** — NVIDIA/AMD/Intel, hybrid GPU (iGPU+dGPU), zalecany sterownik
+- **Dyski** — SATA, NVMe, USB, rozmiar, model
+- **Peryferia** — Bluetooth, czytnik linii papilarnych, Thunderbolt, sensory IIO, kamera, WWAN
+- **Zainstalowane OS** — Windows, Linux (wykrywanie ESP + partycji)
+- **ASUS ROG** — laptopy ROG/TUF
+- **Microsoft Surface** — detekcja modelu via DMI
+
+## Dual-boot
+
+Instalator wspiera dual-boot z Windows i innymi systemami Linux:
+- Automatyczna detekcja zainstalowanych systemów
+- Współdzielenie istniejącego ESP (nigdy nie formatuje)
+- Wizard kurczenia partycji (NTFS, ext4, btrfs)
+- GRUB z os-prober dla wielosystemowych menu boot
+
+## Persystencja w PorteuX
+
+PorteuX używa AUFS (Another Union File System) do nakładania warstw:
+
+| Tryb | Parametr boot | Opis |
+|---|---|---|
+| **Persistent** | `changes=EXIT:/porteux/changes` | Zmiany zachowane na dysku |
+| **Immutable** | `baseonly norootcopy` | Świeży system po każdym restarcie |
+| **Copy to RAM** | `copy2ram` | Cały system w RAM (szybszy po starcie) |
+
+## Moduły opcjonalne
+
+| Moduł | Opis |
+|---|---|
+| `05-devel` | Narzędzia developerskie (GCC, make, git, cmake) |
+| `08-multilanguage` | Wsparcie wielu języków (dane locale) |
+| `0050-multilib-lite` | Biblioteki 32-bitowe (kompatybilność) |
+| `nvidia-driver` | Sterowniki NVIDIA (własnościowe) |
+
+Moduły trafiają do `/porteux/optional/` i mogą być aktywowane poleceniem `activate`.
+
+## Presety
+
+Konfigurację można zapisać i ponownie użyć:
+
+```bash
+# Zapisz podczas instalacji (ekran 15)
+# Lub użyj istniejącej:
+./install.sh --config /root/porteux-preset-20260410.conf
+```
+
+Presety są przenośne między maszynami — wartości sprzętowe (GPU, dyski) są re-wykrywane przy imporcie.
+
+## Wznawianie instalacji
+
+Po przerwie w zasilaniu lub błędzie:
+
+```bash
+./install.sh --resume    # Skanuje dyski w poszukiwaniu checkpointów
+```
+
+Instalator zapamiętuje ukończone fazy i wznawia od ostatniej nieukończonej.
+
+## Menu naprawcze
+
+Gdy komenda zawiedzie, instalator wyświetla menu:
+- **Retry** — powtórz komendę
+- **Shell** — otwórz shell do diagnostyki
+- **Continue** — pomiń i kontynuuj
+- **Log** — pokaż log
+- **Abort** — przerwij instalację
+
+## Backend TUI
+
+Instalator obsługuje 3 backendy (priorytet: gum > dialog > whiptail):
+- **gum** — dołączony w repo (`data/gum.tar.gz`), zero zależności
+- **dialog** — jeśli zainstalowany w systemie Live
+- **whiptail** — fallback
+
+## Struktura projektu
+
+```
+install.sh          — Główny orkiestrator
+configure.sh        — Wrapper: tylko konfiguracja
+lib/                — Moduły biblioteczne (nigdy nie uruchamiaj bezpośrednio)
+tui/                — Ekrany interaktywne (return 0=dalej, 1=wstecz, 2=przerwij)
+data/               — Bazy danych, zasoby statyczne
+presets/             — Przykładowe konfiguracje
+hooks/               — Przykłady hooków (before_*/after_*)
+tests/               — Testy (standalone bash)
+CLAUDE.md           — Kontekst techniczny dla Claude Code
+```
+
+## FAQ
+
+**Jak długo trwa instalacja?**
+~5-15 minut (zależnie od prędkości internetu do pobrania ISO ~500 MB-1 GB).
+
+**Czy mogę zainstalować na VM?**
+Tak, QEMU/KVM i VirtualBox są obsługiwane. W VM nie potrzebujesz Live USB — uruchom instalator bezpośrednio z terminala.
+
+**Czym się różni od oficjalnego instalatora PorteuX?**
+Oficjalny "instalator" to prosty skrypt kopiujący pliki na USB. Ten instalator zapewnia pełny wizard TUI z partycjonowaniem, dual-boot, detekcją sprzętu, persystencją i wiele więcej.
+
+**Czy obsługuje Secure Boot?**
+Nie w obecnej wersji. PorteuX oficjalnie nie wspiera Secure Boot. Wyłącz Secure Boot w BIOS/UEFI.
+
+**Co to jest "Copy to RAM"?**
+Tryb, w którym cały system jest kopiowany do RAM-u przy starcie. Po załadowaniu system działa w pełni z pamięci RAM — nośnik źródłowy można odłączyć. Wymaga 4+ GB RAM.

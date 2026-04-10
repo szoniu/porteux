@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Example hook: runs before disk partitioning phase
+# Copy this file without .example extension and make executable to activate
+
+echo "Hook: before_disks — custom pre-partitioning logic here"

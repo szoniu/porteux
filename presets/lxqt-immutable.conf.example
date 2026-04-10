@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# PorteuX TUI Installer Preset — LXQt Immutable Kiosk
+# Example: Ultra-lightweight kiosk mode, no persistence
+
+DESKTOP_VARIANT='lxqt'
+BOOT_MODE='fresh'
+PERSISTENCE_MODE='none'
+FILESYSTEM='ext4'
+SWAP_TYPE='none'
+HOSTNAME='kiosk'
+TIMEZONE='UTC'
+LOCALE='en_US.UTF-8'
+KEYMAP='us'
+USERNAME='kiosk'
+USER_GROUPS='audio,video'
+ENABLE_DEVEL_MODULE='no'
+ENABLE_MULTILANG_MODULE='no'
+ENABLE_MULTILIB_MODULE='no'
+NVIDIA_MODULE='no'

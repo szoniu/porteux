@@ -1,0 +1,76 @@
+# Void Linux TUI Installer — modern dark theme
+# Set via: export DIALOGRC=/path/to/dialogrc
+
+use_shadow = OFF
+use_colors = ON
+use_scrollbar = ON
+
+# Screen background (behind dialog boxes)
+screen_color = (CYAN,BLACK,ON)
+
+# Shadow (disabled, but define for completeness)
+shadow_color = (BLACK,BLACK,OFF)
+
+# Dialog box body
+dialog_color = (WHITE,BLACK,OFF)
+
+# Title bar
+title_color = (CYAN,BLACK,ON)
+
+# Borders — subtle, matching accent
+border_color = (CYAN,BLACK,OFF)
+border2_color = dialog_color
+
+# Buttons — active: white on cyan, inactive: dim
+button_active_color = (WHITE,CYAN,ON)
+button_inactive_color = (WHITE,BLACK,OFF)
+button_key_active_color = (WHITE,CYAN,ON)
+button_key_inactive_color = (CYAN,BLACK,ON)
+button_label_active_color = (BLACK,CYAN,ON)
+button_label_inactive_color = (WHITE,BLACK,OFF)
+
+# Input boxes
+inputbox_color = (WHITE,BLACK,OFF)
+inputbox_border_color = (CYAN,BLACK,OFF)
+inputbox_border2_color = dialog_color
+
+# Search boxes
+searchbox_color = dialog_color
+searchbox_title_color = title_color
+searchbox_border_color = border_color
+searchbox_border2_color = dialog_color
+
+# Menu / list area
+menubox_color = dialog_color
+menubox_border_color = (CYAN,BLACK,OFF)
+menubox_border2_color = dialog_color
+
+# Menu items
+item_color = (WHITE,BLACK,OFF)
+item_selected_color = (BLACK,CYAN,ON)
+tag_color = (CYAN,BLACK,ON)
+tag_selected_color = (BLACK,CYAN,ON)
+tag_key_color = (CYAN,BLACK,ON)
+tag_key_selected_color = (BLACK,CYAN,ON)
+
+# Checkboxes / radio buttons
+check_color = (CYAN,BLACK,ON)
+check_selected_color = (BLACK,CYAN,ON)
+
+# Scroll arrows
+uarrow_color = (CYAN,BLACK,ON)
+darrow_color = (CYAN,BLACK,ON)
+
+# Gauge / progress bar
+gauge_color = (WHITE,CYAN,ON)
+
+# Form fields
+form_active_text_color = (WHITE,CYAN,ON)
+form_text_color = (WHITE,BLACK,OFF)
+form_item_readonly_color = (CYAN,BLACK,OFF)
+
+# Item help text (bottom)
+itemhelp_color = (CYAN,BLACK,OFF)
+
+# Position indicator
+position_indicator_color = (CYAN,BLACK,ON)

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# PorteuX TUI Installer Preset — KDE Persistent
+# Example: KDE Plasma with persistent changes
+
+DESKTOP_VARIANT='kde'
+BOOT_MODE='normal'
+PERSISTENCE_MODE='changes'
+FILESYSTEM='ext4'
+SWAP_TYPE='none'
+HOSTNAME='porteux'
+TIMEZONE='Europe/Warsaw'
+LOCALE='pl_PL.UTF-8'
+KEYMAP='pl'
+USERNAME='user'
+USER_GROUPS='wheel,audio,video,input,storage,network'
+ENABLE_DEVEL_MODULE='no'
+ENABLE_MULTILANG_MODULE='no'
+ENABLE_MULTILIB_MODULE='no'
+NVIDIA_MODULE='no'

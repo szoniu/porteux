@@ -1,0 +1,8 @@
+*.log
+*.conf
+!presets/*.conf.example
+/tmp/
+*.swp
+*.swo
+*~
+.DS_Store
