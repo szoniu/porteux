@@ -80,7 +80,7 @@ sudo ./install.sh
 | 3 | ISO download | Pobranie PorteuX ISO dla wybranego desktopu |
 | 4 | ISO verify | Weryfikacja SHA256 (jeśli dostępna) |
 | 5 | ISO extract | Ekstrakcja zawartości ISO na partycję |
-| 6 | Bootloader | GRUB (EFI) lub syslinux (BIOS) |
+| 6 | Bootloader | syslinux (EFI i BIOS — z ISO PorteuX, bez GRUB-a) |
 | 7 | Persystencja | Konfiguracja katalogu zmian AUFS |
 | 8 | Moduły | Pobranie opcjonalnych modułów .xzm |
 | 9 | System | Hostname, timezone, locale, keymap |
@@ -104,7 +104,8 @@ Instalator wspiera dual-boot z Windows i innymi systemami Linux:
 - Automatyczna detekcja zainstalowanych systemów
 - Współdzielenie istniejącego ESP (nigdy nie formatuje)
 - Wizard kurczenia partycji (NTFS, ext4, btrfs)
-- GRUB z os-prober dla wielosystemowych menu boot
+- Nowa partycja root tworzona w wolnym miejscu i wykrywana po `sfdisk --append` (nigdy nie zgaduje numeru → nie sformatuje cudzej partycji)
+- Osobny wpis bootowania UEFI dla PorteuX (PorteuX używa syslinux, nie GRUB-a) — system wybierasz z menu boot firmware
 
 ## Persystencja w PorteuX
 
@@ -112,7 +113,7 @@ PorteuX używa AUFS (Another Union File System) do nakładania warstw:
 
 | Tryb | Parametr boot | Opis |
 |---|---|---|
-| **Persistent** | `changes=EXIT:/porteux/changes` | Zmiany zachowane na dysku |
+| **Persistent** | `changes=EXIT:/porteux` | Zmiany zachowane na dysku (PorteuX tworzy podkatalog `changes/` w `/porteux`) |
 | **Immutable** | `baseonly norootcopy` | Świeży system po każdym restarcie |
 | **Copy to RAM** | `copy2ram` | Cały system w RAM (szybszy po starcie) |
 
@@ -125,7 +126,17 @@ PorteuX używa AUFS (Another Union File System) do nakładania warstw:
 | `0050-multilib-lite` | Biblioteki 32-bitowe (kompatybilność) |
 | `nvidia-driver` | Sterowniki NVIDIA (własnościowe) |
 
-Moduły trafiają do `/porteux/optional/` i mogą być aktywowane poleceniem `activate`.
+Moduły opcjonalne trafiają do `/porteux/optional/` i wymagają **ręcznej** aktywacji poleceniem `activate <moduł>` (lub przeniesienia do `/porteux/modules/`, by ładowały się automatycznie przy starcie).
+
+> **Locale spoza angielskiego:** baza PorteuX zawiera tylko locale `C`/`en_US`. Jeśli na ekranie lokalizacji wybierzesz np. `pl_PL.UTF-8`, instalator **automatycznie** pobierze moduł `08-multilanguage` (glibc-i18n) i umieści go w `/porteux/modules/`, żeby język działał już po pierwszym starcie — bez ręcznej aktywacji.
+
+## Po instalacji
+
+PorteuX nie ma menedżera pakietów w klasycznym sensie — dodatkowe oprogramowanie instaluje się przez **PorteuX App Store** (`porteux-app-store`, dostępny w menu pulpitu) albo ręcznie modułami `.xzm`.
+
+- **Aktywacja pobranych modułów opcjonalnych:** `activate /porteux/optional/<moduł>.xzm` (lub przenieś moduł do `/porteux/modules/` dla auto-ładowania).
+- **Dane logowania:** do momentu pierwszego uruchomienia (które stosuje Twoje ustawienia) obowiązują domyślne: `root`/`toor`, `guest`/`guest`. Skrypt first-boot ustawia Twoje hasła/użytkownika przy pierwszym starcie.
+- **UMPC:** ewentualne uwagi poinstalacyjne zapisywane są do `/root/POST-INSTALL-NOTES.txt`.
 
 ## Presety
 

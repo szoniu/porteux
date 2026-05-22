@@ -4,8 +4,9 @@ source "${LIB_DIR}/protection.sh"
 
 # persistence_setup — Configure persistence on the target
 # PorteuX uses AUFS overlays with the changes= boot parameter:
-#   changes=EXIT:/porteux/changes  — persist changes to disk directory
-#   (no changes= parameter)        — immutable mode (changes lost on reboot)
+#   changes=EXIT:/porteux  — persist changes; PorteuX creates a "changes" subdir
+#                            inside /porteux and stores the overlay there
+#   (no changes= parameter) — immutable mode (changes lost on reboot)
 persistence_setup() {
     local target="${MOUNTPOINT:?MOUNTPOINT not set}"
 
@@ -39,11 +40,13 @@ _setup_persistent_changes() {
     local target="$1"
     local changes_dir="${target}/${PORTEUX_CHANGES_DIR}"
 
-    # Create changes directory
+    # Pre-create the overlay subdir PorteuX uses (/porteux/changes). The installer
+    # seeds system/user config here; at boot PorteuX overlays this exact directory
+    # because the boot parameter points at the base dir /porteux.
     mkdir -p "${changes_dir}"
 
     einfo "Persistence directory created: /${PORTEUX_CHANGES_DIR}"
-    einfo "Boot parameter: changes=EXIT:/${PORTEUX_CHANGES_DIR}"
+    einfo "Boot parameter: changes=EXIT:/${PORTEUX_PERSISTENCE_DIR}"
 
     # Create a marker file to indicate persistence is configured
     echo "# PorteuX persistence configuration" > "${changes_dir}/.persistence"
@@ -55,7 +58,7 @@ _setup_persistent_changes() {
 persistence_get_boot_param() {
     case "${PERSISTENCE_MODE:-changes}" in
         changes)
-            echo "changes=EXIT:/${PORTEUX_CHANGES_DIR}"
+            echo "changes=EXIT:/${PORTEUX_PERSISTENCE_DIR}"
             ;;
         none)
             echo ""

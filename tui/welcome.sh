@@ -62,7 +62,7 @@ Installation aborted. No changes were made to any disk."
     fi
 
     # Dialog backend
-    msg+="TUI backend: ${DIALOG_BACKEND:-unknown}\n"
+    msg+="TUI backend: ${DIALOG_CMD:-unknown}\n"
 
     # Show warnings
     if [[ ${#warnings[@]} -gt 0 ]]; then

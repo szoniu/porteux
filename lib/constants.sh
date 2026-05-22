@@ -39,6 +39,12 @@ readonly -a PORTEUX_OPTIONAL_MODULES=(
 readonly PORTEUX_BASE_DIR="porteux"
 readonly PORTEUX_MODULES_DIR="${PORTEUX_BASE_DIR}/modules"
 readonly PORTEUX_OPTIONAL_DIR="${PORTEUX_BASE_DIR}/optional"
+# Persistence: the boot parameter points at the BASE directory (changes=EXIT:/porteux);
+# PorteuX itself creates a "changes" subdirectory inside it for the AUFS overlay (see
+# upstream porteux.cfg + boot/docs/cheatcodes.txt). PORTEUX_CHANGES_DIR is therefore
+# where the installer pre-seeds config (it IS that overlay subdir), while
+# PORTEUX_PERSISTENCE_DIR is what goes into the changes= boot parameter.
+readonly PORTEUX_PERSISTENCE_DIR="${PORTEUX_BASE_DIR}"
 readonly PORTEUX_CHANGES_DIR="${PORTEUX_BASE_DIR}/changes"
 readonly PORTEUX_BOOT_DIR="boot"
 

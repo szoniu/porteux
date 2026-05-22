@@ -245,6 +245,15 @@ preflight_checks() {
             einfo "NTP daemon already running, clock should be synced"
         elif command -v ntpdate &>/dev/null; then
             try "Syncing system clock" ntpdate pool.ntp.org || true
+        elif command -v sntp &>/dev/null; then
+            try "Syncing system clock" sntp -sS pool.ntp.org || true
+        elif command -v chronyd &>/dev/null; then
+            try "Syncing system clock" chronyd -q 'pool pool.ntp.org iburst' || true
+        elif command -v ntpd &>/dev/null; then
+            try "Syncing system clock" ntpd -gq || true
+        else
+            ewarn "No time-sync tool found — a wrong clock can break HTTPS/cert checks"
+            ewarn "when resolving/downloading the ISO. Set it manually if needed: date -s ..."
         fi
     fi
 

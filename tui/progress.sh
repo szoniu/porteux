@@ -64,14 +64,27 @@ screen_progress() {
     done
 
     einfo "=== Installation complete ==="
-    dialog_msgbox "Installation Complete" \
-        "PorteuX has been installed successfully!\n\n\
+
+    local complete_msg="PorteuX has been installed successfully!\n\n\
 Desktop: ${DESKTOP_VARIANT:-kde}\n\
 Persistence: ${PERSISTENCE_MODE:-changes}\n\
 Boot mode: ${BOOT_MODE:-normal}\n\n\
-You can now reboot into your new system.\n\n\
-Default PorteuX credentials (until first boot applies your settings):\n\
-  root/toor, guest/guest"
+Default credentials until first boot applies your settings:\n\
+  root/toor, guest/guest\n\n\
+After reboot:\n\
+  - Install more software via the PorteuX App Store (porteux-app-store,\n\
+    in the desktop menu) or with .xzm modules.\n\
+  - Activate optional modules you downloaded:\n\
+    activate /porteux/optional/<module>.xzm\n\
+    (or move them to /porteux/modules/ to auto-load at boot)."
+
+    if [[ "${ENABLE_DEVEL_MODULE:-no}" == "yes" || "${ENABLE_MULTILANG_MODULE:-no}" == "yes" \
+        || "${ENABLE_MULTILIB_MODULE:-no}" == "yes" ]]; then
+        complete_msg+="\n  - Your selected optional modules are in /porteux/optional/\n\
+    and need 'activate' before use."
+    fi
+
+    dialog_msgbox "Installation Complete" "${complete_msg}"
 }
 
 # _execute_phase — Execute a single installation phase

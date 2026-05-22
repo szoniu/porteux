@@ -39,9 +39,9 @@ lib/                    — Library modules (NEVER execute directly)
 ├── hardware.sh         — detect_cpu/gpu(multi-GPU/hybrid)/disks/esp/installed_oses, detect_asus_rog, detect_surface, detect_bluetooth/fingerprint/thunderbolt/sensors/webcam/wwan, get_hardware_summary
 ├── disk.sh             — Two-phase: disk_plan_add/add_stdin/show/auto/dualboot → cleanup_target_disk + disk_execute_plan (sfdisk), mount/unmount_filesystems, get_uuid/get_partuuid, shrink helpers
 ├── network.sh          — check_network
-├── iso.sh              — iso_get_url/download/verify/extract (_find_iso_file for resume)
-├── modules.sh          — modules_list_installed, modules_download_optional, modules_verify, _download_optional_module, _download_nvidia_module
-├── bootloader.sh       — bootloader_install (_bootloader_install_efi with GRUB, _bootloader_install_bios with syslinux), _update_syslinux_config
+├── iso.sh              — porteux_resolve_asset_url (GitHub release asset lookup), iso_get_url/download/verify/extract (_find_iso_file for resume)
+├── modules.sh          — modules_list_installed, modules_download_optional, modules_ensure_locale_support (auto-load 08-multilanguage for non-base locales), modules_verify, _download_optional_module, _download_nvidia_module
+├── bootloader.sh       — bootloader_install (_bootloader_install_efi uses the ISO's bundled EFI syslinux — NO GRUB; _bootloader_install_bios with syslinux), _update_syslinux_config (awk rewriter: DEFAULT label + persistence + UMPC, idempotent)
 ├── persistence.sh      — persistence_setup (_setup_persistent_changes), persistence_get_boot_param, persistence_clean
 ├── system.sh           — system_configure (hostname/timezone/locale/keymap), system_create_users (first-boot script via rc.local), system_finalize
 ├── hooks.sh            — maybe_exec 'before_X' / 'after_X'
@@ -133,7 +133,11 @@ These are pre-built and included in the ISO. The installer simply extracts them 
 #### AUFS persistence
 
 PorteuX uses AUFS (Another Union File System) to layer squashfs modules. Changes go to a writable overlay:
-- `changes=EXIT:/porteux/changes` — boot parameter for persistence
+- `changes=EXIT:/porteux` — boot parameter for persistence. The param points at
+  the BASE dir `/porteux`; PorteuX itself creates a `changes/` subdirectory inside
+  it for the AUFS overlay. The installer therefore pre-seeds config into
+  `/porteux/changes` (= `PORTEUX_CHANGES_DIR`) while the boot param uses `/porteux`
+  (= `PORTEUX_PERSISTENCE_DIR`). These two MUST stay distinct.
 - `baseonly norootcopy` — immutable mode (no persistence)
 - `copy2ram` — load all modules to RAM
 
@@ -158,7 +162,7 @@ Since PorteuX's `/etc/passwd` lives inside a read-only squashfs module, the inst
 
 #### ISO download and extraction
 
-The installer downloads the official PorteuX ISO for the selected desktop variant, mounts it, and copies all contents to the target partition. This is fundamentally different from other installers that download a base system and build upon it.
+The installer resolves the official PorteuX ISO for the selected desktop variant from the `porteux/porteux` GitHub release assets (matching `porteux-*-<variant>-*-x86_64.iso`), downloads it, mounts it, and copies all contents to the target partition. This is fundamentally different from other installers that download a base system and build upon it.
 
 #### Boot directory structure on target
 
@@ -166,7 +170,7 @@ The installer downloads the official PorteuX ISO for the selected desktop varian
 /boot/syslinux/vmlinuz      — Linux kernel
 /boot/syslinux/initrd.zst   — Initial ramdisk (zstd compressed)
 /boot/syslinux/porteux.cfg  — Syslinux configuration
-/EFI/BOOT/BOOTX64.EFI       — EFI bootloader
+/EFI/BOOT/bootx64.efi       — EFI bootloader (syslinux; lowercase filename)
 /porteux/modules/            — Base system modules (auto-loaded)
 /porteux/optional/           — Optional modules (manual activation)
 /porteux/changes/            — Persistence overlay directory
@@ -250,7 +254,7 @@ git clone https://github.com/szoniu/porteux.git && cd porteux
 ```bash
 # Pre-install another Linux on /dev/vda1-vda2
 # Run PorteuX installer with dual-boot scheme
-# Verify: ESP reused, GRUB detects both OSes, both boot
+# Verify: ESP reused, separate UEFI boot entry for PorteuX (no GRUB), both boot via firmware boot menu
 ```
 
 #### Test 6: Resume after interruption
@@ -297,7 +301,7 @@ git clone https://github.com/szoniu/porteux.git && cd porteux
 ```bash
 # Install on VM with NVIDIA GPU passthrough (or just test download)
 # Select NVIDIA_MODULE=yes
-# Verify: nvidia-driver.xzm downloaded to /porteux/optional/
+# Verify: NVIDIA driver module downloaded to /porteux/optional/ (upstream ships it as nvidia-driver-current.zip → extracted to .xzm)
 ```
 
 #### Test 12: User setup on first boot
@@ -343,7 +347,7 @@ git clone https://github.com/szoniu/porteux.git && cd porteux
 - Installer run as non-root → should fail at preflight
 - Disk with existing partitions → cleanup_target_disk should handle
 - Very small disk (< 4 GiB) → should reject at disk_select
-- SourceForge download redirect (302) → curl -L should follow
+- GitHub release asset redirect (302 → objects.githubusercontent.com) → curl -L should follow
 - Interrupted ISO download → resume should re-download
 - Invalid ISO (truncated) → iso_verify should catch (size check)
 - gum binary missing → should fall back to dialog/whiptail/text
@@ -414,7 +418,11 @@ tail -f /tmp/porteux-installer.log
 - **AUFS changes directory**: Must exist before first boot for persistence to work
 - **First-boot user setup**: Users are created at first boot, not during installation, because `/etc/passwd` is read-only in the squashfs module
 - **rc.local for automation**: PorteuX uses `/etc/rc.d/rc.local` for first-boot scripts (sysvinit)
-- **SourceForge downloads**: May redirect; curl needs `-L` (follow redirects)
+- **GitHub release downloads**: ISO + module URLs are RESOLVED from the `porteux/porteux` GitHub release assets (`porteux_resolve_asset_url` in `iso.sh`), never hand-constructed — filenames embed per-variant app versions and date stamps (e.g. `porteux-2.6-current-lxqt-2.3.0-x86_64.iso`, `08-multilanguage-current-20260228.xzm`). Asset URLs redirect, so curl needs `-L`.
+- **Persistence dir is split**: boot param uses `PORTEUX_PERSISTENCE_DIR` (`/porteux`); config is written to `PORTEUX_CHANGES_DIR` (`/porteux/changes`). Don't conflate them.
+- **EFI is syslinux, not GRUB**: the ISO ships `EFI/BOOT/bootx64.efi` whose `syslinux.cfg` does `INCLUDE ../../boot/syslinux/porteux.cfg`; the ESP needs BOTH `/EFI/BOOT` and `/boot/syslinux`. All boot config lives in `porteux.cfg` (single source for BIOS + EFI).
+- **Non-base locales need a module**: base glibc only has `C`/`en_US`. Selecting any other locale (pl_PL, de_DE, en_GB...) auto-downloads `08-multilanguage` (glibc-i18n) into the auto-loading `/porteux/modules/` (see `modules_ensure_locale_support`).
+- **Dual-boot root partition**: never guess the partition number after `sfdisk --append` (GPT gaps make `count+1` point at an existing partition) — detect the new device by diffing the partition list before/after, then format.
 - **FAT32 filesystem option**: PorteuX can run from FAT32 (maximum USB portability), but this limits file sizes to 4 GB
 
 ## How to add a new TUI screen

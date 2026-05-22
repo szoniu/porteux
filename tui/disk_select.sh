@@ -372,20 +372,18 @@ You will then be asked to specify partition paths."
                 "Enter the path to the root partition:" \
                 "/dev/${TARGET_DISK##*/}2") || return "${TUI_BACK}"
 
-            local has_swap
-            has_swap=$(dialog_yesno "Swap Partition" \
-                "Did you create a swap partition?" && echo "yes" || echo "no")
-            if [[ "${has_swap}" == "yes" ]]; then
+            if dialog_yesno "Swap Partition" "Did you create a swap partition?"; then
                 SWAP_PARTITION=$(dialog_inputbox "Swap Partition" \
                     "Enter the path to the swap partition:" \
                     "/dev/${TARGET_DISK##*/}3") || return "${TUI_BACK}"
                 export SWAP_PARTITION
             fi
 
-            local esp_reuse
-            esp_reuse=$(dialog_yesno "ESP Reuse" \
-                "Is this an existing ESP with other bootloaders? (e.g., Windows)" \
-                && echo "yes" || echo "no")
+            local esp_reuse="no"
+            if dialog_yesno "ESP Reuse" \
+                "Is this an existing ESP with other bootloaders? (e.g., Windows)"; then
+                esp_reuse="yes"
+            fi
             ESP_REUSE="${esp_reuse}"
 
             export ESP_PARTITION ROOT_PARTITION ESP_REUSE

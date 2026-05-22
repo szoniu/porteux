@@ -40,6 +40,18 @@ screen_locale_config() {
     export LOCALE="${locale}"
     einfo "Locale: ${LOCALE}"
 
+    # PorteuX's base system only ships C / en_US locales. For anything else the
+    # installer auto-includes the 08-multilanguage module (glibc-i18n) so the
+    # locale actually works on first boot — tell the user so it isn't a surprise.
+    if _locale_needs_i18n; then
+        dialog_msgbox "Language data" \
+"Locale ${LOCALE} is not part of PorteuX's base system.
+
+The installer will automatically download the 08-multilanguage
+module (glibc-i18n) and set it to load at boot, so ${LOCALE}
+works out of the box. This needs network access during install."
+    fi
+
     # --- Keymap ---
     local keymap
     keymap=$(dialog_menu "Keymap" "Select console keymap:" \

@@ -28,13 +28,13 @@ screen_gpu_config() {
     case "${detected_vendor}" in
         nvidia)
             msg+="\nNVIDIA GPU detected. PorteuX provides a separate\n"
-            msg+="nvidia-driver.xzm module for proprietary drivers.\n"
+            msg+="NVIDIA driver module (proprietary).\n"
             msg+="\nWithout it, the open-source 'nvk' driver will be used."
 
             dialog_msgbox "GPU Configuration" "${msg}"
 
             if dialog_yesno "NVIDIA Module" \
-                "Download NVIDIA proprietary driver module?\n\n(nvidia-driver.xzm — recommended for best performance)"; then
+                "Download NVIDIA proprietary driver module?\n\n(recommended for best performance)"; then
                 export NVIDIA_MODULE="yes"
                 einfo "NVIDIA driver module will be downloaded"
             else

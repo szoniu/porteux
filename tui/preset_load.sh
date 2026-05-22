@@ -41,7 +41,10 @@ screen_preset_load() {
             local f
             for f in "${SCRIPT_DIR}/presets"/*.conf "${SCRIPT_DIR}/presets"/*.conf.example; do
                 [[ -f "${f}" ]] || continue
-                presets+=("$(basename "${f}")" "$(head -5 "${f}" | grep '^# ' | tail -1 | sed 's/^# //')")
+                # Trailing `|| true`: a preset without a leading `# ` comment makes
+                # grep exit 1, which under pipefail+inherit_errexit would abort the
+                # wizard via the ERR trap.
+                presets+=("$(basename "${f}")" "$(head -5 "${f}" | grep '^# ' | tail -1 | sed 's/^# //' || true)")
             done
 
             if [[ ${#presets[@]} -eq 0 ]]; then

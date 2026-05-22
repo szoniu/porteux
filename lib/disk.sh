@@ -54,7 +54,7 @@ disk_plan_show() {
 disk_plan_auto() {
     local disk="${TARGET_DISK}"
     local fs="${FILESYSTEM:-ext4}"
-    local swap_type="${SWAP_TYPE:-zram}"
+    local swap_type="${SWAP_TYPE:-none}"
     local swap_size="${SWAP_SIZE_MIB:-${SWAP_DEFAULT_SIZE_MIB}}"
 
     disk_plan_reset
@@ -92,6 +92,9 @@ disk_plan_auto() {
         disk_plan_add "Format swap partition" \
             mkswap -L swap "${SWAP_PARTITION}"
         (( part_num++ ))
+    else
+        # Don't leak a stale swap device from a previous plan/resume into config.
+        SWAP_PARTITION=""
     fi
 
     ROOT_PARTITION="${part_prefix}${part_num}"
@@ -295,38 +298,39 @@ disk_plan_dualboot() {
     # ESP is reused, never formatted
     einfo "Reusing existing ESP: ${ESP_PARTITION}"
 
+    DUALBOOT_CREATE_ROOT=0
+    DUALBOOT_ROOT_FS=""
+
     if [[ -z "${ROOT_PARTITION:-}" ]]; then
-        # Need to create root partition in free space using sfdisk --append
+        # Create the root partition in free space. sfdisk --append assigns the
+        # LOWEST FREE slot, which is NOT necessarily count+1 when GPT numbering has
+        # a gap (e.g. parts 1,2,4 -> append fills 3). Guessing the number here can
+        # point ROOT_PARTITION at an EXISTING partition and format someone else's
+        # OS. So we only schedule creation; the real device is detected (and then
+        # formatted) post-append in disk_execute_plan via a before/after diff.
         disk_plan_add_stdin "Create root partition in free space" \
             "type=${GPT_TYPE_LINUX}, name=linux"$'\n' \
             sfdisk --append --force --no-reread "${disk}"
+        DUALBOOT_CREATE_ROOT=1
+        DUALBOOT_ROOT_FS="${fs}"
 
-        # Determine partition name: count existing partitions via sfdisk
-        local existing_count
+        # Provisional name for plan display / dry-run only — overwritten after
+        # the partition is actually created and detected.
+        local existing_count part_prefix="${disk}"
         existing_count=$(sfdisk --dump "${disk}" 2>/dev/null | grep -c "^${disk}") || existing_count=0
-        local next_part_num=$(( existing_count + 1 ))
-        local part_prefix="${disk}"
         [[ "${disk}" =~ [0-9]$ ]] && part_prefix="${disk}p"
-        ROOT_PARTITION="${part_prefix}${next_part_num}"
+        ROOT_PARTITION="${part_prefix}$(( existing_count + 1 ))"
+    else
+        # Reusing an explicitly chosen existing partition as root — format it now.
+        case "${fs}" in
+            ext4)  disk_plan_add "Format root as ext4"  mkfs.ext4 -L porteux "${ROOT_PARTITION}" ;;
+            btrfs) disk_plan_add "Format root as btrfs" mkfs.btrfs -f -L porteux "${ROOT_PARTITION}" ;;
+            xfs)   disk_plan_add "Format root as XFS"   mkfs.xfs -f -L porteux "${ROOT_PARTITION}" ;;
+            fat32) disk_plan_add "Format root as FAT32" mkfs.vfat -F 32 -n PORTEUX "${ROOT_PARTITION}" ;;
+        esac
     fi
 
-    # Format root
-    case "${fs}" in
-        ext4)
-            disk_plan_add "Format root as ext4" \
-                mkfs.ext4 -L porteux "${ROOT_PARTITION}"
-            ;;
-        btrfs)
-            disk_plan_add "Format root as btrfs" \
-                mkfs.btrfs -f -L porteux "${ROOT_PARTITION}"
-            ;;
-        xfs)
-            disk_plan_add "Format root as XFS" \
-                mkfs.xfs -f -L porteux "${ROOT_PARTITION}"
-            ;;
-    esac
-
-    export ROOT_PARTITION
+    export ROOT_PARTITION DUALBOOT_CREATE_ROOT DUALBOOT_ROOT_FS
     einfo "Dual-boot plan generated"
 }
 
@@ -374,6 +378,25 @@ cleanup_target_disk() {
     einfo "Cleanup of ${disk} complete"
 }
 
+# _disk_list_partitions — Echo (sorted) partition device paths on disk $1.
+# Used to detect which partition sfdisk --append actually created.
+_disk_list_partitions() {
+    lsblk -lnpo NAME,TYPE "$1" 2>/dev/null | awk '$2=="part"{print $1}' | sort
+}
+
+# _disk_format_root — Format $1 as filesystem $2 (used for the dual-boot root that
+# is created + detected at execution time, not at plan time).
+_disk_format_root() {
+    local dev="$1" fs="$2"
+    case "${fs}" in
+        ext4)  try "Format root as ext4"  mkfs.ext4 -L porteux "${dev}" ;;
+        btrfs) try "Format root as btrfs" mkfs.btrfs -f -L porteux "${dev}" ;;
+        xfs)   try "Format root as XFS"   mkfs.xfs -f -L porteux "${dev}" ;;
+        fat32) try "Format root as FAT32" mkfs.vfat -F 32 -n PORTEUX "${dev}" ;;
+        *)     die "Unknown filesystem for root: ${fs}" ;;
+    esac
+}
+
 # disk_execute_plan — Execute all planned disk operations
 disk_execute_plan() {
     if [[ ${#DISK_ACTIONS[@]} -eq 0 ]]; then
@@ -392,6 +415,13 @@ disk_execute_plan() {
     cleanup_target_disk
 
     disk_plan_show
+
+    # Dual-boot created-root: snapshot existing partitions so we can detect the one
+    # sfdisk --append actually creates (its number is unpredictable with GPT gaps).
+    local _db_before=""
+    if [[ "${DUALBOOT_CREATE_ROOT:-0}" == "1" && "${DRY_RUN}" != "1" ]]; then
+        _db_before="$(_disk_list_partitions "${TARGET_DISK}")"
+    fi
 
     local i
     for (( i = 0; i < ${#DISK_ACTIONS[@]}; i++ )); do
@@ -418,21 +448,30 @@ disk_execute_plan() {
         fi
         sleep 2
 
-        # Verify ROOT_PARTITION exists for dual-boot (sfdisk --append may assign different number)
-        if [[ "${PARTITION_SCHEME:-}" == "dual-boot" && -n "${ROOT_PARTITION:-}" ]]; then
-            if [[ ! -b "${ROOT_PARTITION}" ]]; then
-                ewarn "Expected partition ${ROOT_PARTITION} not found, rescanning..."
-                local actual_last
-                actual_last=$(sfdisk --dump "${TARGET_DISK}" 2>/dev/null \
+        # Dual-boot created-root: detect the newly created partition by diffing the
+        # partition list before/after the append, then format it. We never reuse
+        # the provisional guessed number — it could point at an existing OS.
+        if [[ "${DUALBOOT_CREATE_ROOT:-0}" == "1" ]]; then
+            local _db_after _db_new=""
+            _db_after="$(_disk_list_partitions "${TARGET_DISK}")"
+            _db_new="$(comm -13 <(printf '%s\n' "${_db_before}") <(printf '%s\n' "${_db_after}") | head -1)"
+            if [[ -n "${_db_new}" && -b "${_db_new}" ]]; then
+                ROOT_PARTITION="${_db_new}"
+                einfo "Detected newly created root partition: ${ROOT_PARTITION}"
+            else
+                # Fallback: highest-numbered partition from the sfdisk dump.
+                local _last
+                _last=$(sfdisk --dump "${TARGET_DISK}" 2>/dev/null \
                     | grep "^${TARGET_DISK}" | tail -1 | awk '{print $1}') || true
-                if [[ -n "${actual_last}" && -b "${actual_last}" ]]; then
-                    ewarn "Using detected partition: ${actual_last} (instead of ${ROOT_PARTITION})"
-                    ROOT_PARTITION="${actual_last}"
-                    export ROOT_PARTITION
+                if [[ -n "${_last}" && -b "${_last}" ]]; then
+                    ROOT_PARTITION="${_last}"
+                    ewarn "Diff detection failed; using last partition: ${ROOT_PARTITION}"
                 else
-                    ewarn "Could not detect root partition — manual verification may be needed"
+                    die "Could not determine the created root partition on ${TARGET_DISK}"
                 fi
             fi
+            export ROOT_PARTITION
+            _disk_format_root "${ROOT_PARTITION}" "${DUALBOOT_ROOT_FS:-${FILESYSTEM:-ext4}}"
         fi
     fi
 

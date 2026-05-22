@@ -63,8 +63,10 @@ nvidia_prefers_open_kernel() {
 # Usage: get_gpu_recommendation <vendor_id> <device_id>
 # Prints: "driver_package|use_open_kernel(yes/no)"
 #
-# Void driver packages:
-#   nvidia  — proprietary NVIDIA driver (from nonfree repo)
+# Display-only driver labels (PorteuX has no package manager; mesa ships in the
+# base GUI module and NVIDIA's proprietary driver is a separate downloadable
+# module — these strings are informational, nothing is installed from them):
+#   nvidia   — proprietary NVIDIA driver (downloadable module)
 #   mesa-dri — Mesa DRI drivers for AMD/Intel (already in base)
 get_gpu_recommendation() {
     local vendor_id="$1" device_id="${2:-0000}"

@@ -2,38 +2,86 @@
 # iso.sh — PorteuX ISO download, verification, and extraction
 source "${LIB_DIR}/protection.sh"
 
+# PORTEUX_RELEASE_API — GitHub "latest release" endpoint. PorteuX ISOs and
+# optional .xzm modules are published as assets here, with date/version stamps in
+# their filenames, so download URLs must be resolved from this metadata rather
+# than constructed by hand.
+: "${PORTEUX_RELEASE_API:=https://api.github.com/repos/porteux/porteux/releases/latest}"
+
+# porteux_resolve_asset_url — Resolve a release asset's download URL by filename.
+# $1: extended-regex matched (case-insensitive) against each browser_download_url.
+# Echoes the first matching URL and returns 0; returns 1 on no match / no network.
+porteux_resolve_asset_url() {
+    local pattern="$1"
+    command -v curl &>/dev/null || return 1
+
+    local json
+    json=$(curl -fsSL --max-time 15 "${PORTEUX_RELEASE_API}" 2>/dev/null || true)
+    [[ -n "${json}" ]] || return 1
+
+    local url
+    url=$(printf '%s' "${json}" \
+        | grep -oP '"browser_download_url":\s*"\K[^"]+' \
+        | grep -iE "${pattern}" \
+        | head -n1 || true)
+
+    [[ -n "${url}" ]] || return 1
+    printf '%s\n' "${url}"
+}
+
 # iso_get_url — Determine the ISO download URL for the selected desktop variant
 # Sets: ISO_URL, ISO_FILENAME
+#
+# PorteuX ISO filenames embed the desktop-app version, e.g.
+#   porteux-2.6-current-lxqt-2.3.0-x86_64.iso
+# That version segment (here "2.3.0") differs per variant AND per release, so the
+# filename CANNOT be reconstructed from variant + tag alone. We therefore query
+# the GitHub release assets and pick the one matching the chosen variant, using
+# its real browser_download_url.
 iso_get_url() {
     local variant="${DESKTOP_VARIANT:?DESKTOP_VARIANT not set}"
 
     einfo "Resolving ISO URL for variant: ${variant}"
 
-    # If user provided a custom URL, use it
     if [[ -n "${ISO_URL:-}" ]]; then
-        ISO_FILENAME="$(basename "${ISO_URL}")"
-        einfo "Using custom ISO URL: ${ISO_URL}"
-        return 0
+        if [[ "${_ISO_AUTORESOLVED_VARIANT:-}" == "${variant}" ]]; then
+            # Already auto-resolved for this exact variant — reuse.
+            ISO_FILENAME="$(basename "${ISO_URL}")"
+            return 0
+        elif [[ -z "${_ISO_AUTORESOLVED_VARIANT:-}" ]]; then
+            # URL came from a preset/env, not our own resolution — honor it verbatim.
+            ISO_FILENAME="$(basename "${ISO_URL}")"
+            einfo "Using custom ISO URL: ${ISO_URL}"
+            return 0
+        fi
+        # Auto-resolved for a DIFFERENT variant (user changed DE via Back) — re-resolve.
+        ISO_URL=""
     fi
 
-    # PorteuX ISOs are hosted on SourceForge
-    # Pattern: PorteuX-<variant>-v<version>-x86_64.iso
-    # We try to detect the latest version from GitHub releases
-    local latest_tag=""
-    if command -v curl &>/dev/null; then
-        latest_tag=$(curl -fsSL --max-time 10 \
-            "https://api.github.com/repos/porteux/porteux/releases/latest" 2>/dev/null \
-            | grep -oP '"tag_name":\s*"\K[^"]+' || true)
+    if ! command -v curl &>/dev/null; then
+        die "curl is required to resolve the PorteuX ISO download URL"
     fi
 
-    if [[ -z "${latest_tag}" ]]; then
-        latest_tag="v3.0"
-        ewarn "Could not detect latest version, using default: ${latest_tag}"
+    # Pick the asset whose filename matches porteux-...-<variant>-...-x86_64.iso
+    ISO_URL=$(porteux_resolve_asset_url "/porteux-.*-${variant}-.*-x86_64\.iso$" || true)
+
+    if [[ -z "${ISO_URL:-}" ]]; then
+        # In dry-run we tolerate a missing/unreachable API (download is simulated).
+        if [[ "${DRY_RUN:-0}" == "1" ]]; then
+            ewarn "Could not resolve ISO URL for '${variant}' (dry-run): using placeholder"
+            ISO_FILENAME="porteux-${variant}-x86_64.iso"
+            ISO_URL="https://github.com/porteux/porteux/releases/download/UNKNOWN/${ISO_FILENAME}"
+            _ISO_AUTORESOLVED_VARIANT="${variant}"
+            export ISO_URL ISO_FILENAME _ISO_AUTORESOLVED_VARIANT
+            return 0
+        fi
+        die "Could not resolve a PorteuX ISO for variant '${variant}' from ${PORTEUX_RELEASE_API}.
+Check network connectivity, or set a custom ISO_URL before running."
     fi
 
-    ISO_FILENAME="PorteuX-${variant}-${latest_tag}-x86_64.iso"
-    ISO_URL="${PORTEUX_DOWNLOAD_BASE}/${latest_tag}/${ISO_FILENAME}/download"
-    export ISO_URL ISO_FILENAME
+    ISO_FILENAME="$(basename "${ISO_URL}")"
+    _ISO_AUTORESOLVED_VARIANT="${variant}"
+    export ISO_URL ISO_FILENAME _ISO_AUTORESOLVED_VARIANT
 
     einfo "ISO URL: ${ISO_URL}"
     einfo "ISO filename: ${ISO_FILENAME}"
@@ -178,7 +226,8 @@ _find_iso_file() {
 
     if [[ -d "${search_dir}" ]]; then
         local f
-        for f in "${search_dir}"/PorteuX-*.iso; do
+        # Real PorteuX ISO filenames are lowercase: porteux-<ver>-current-<variant>-...iso
+        for f in "${search_dir}"/porteux-*.iso; do
             if [[ -f "${f}" ]]; then
                 ISO_FILE="${f}"
                 ISO_FILENAME="$(basename "${f}")"

@@ -119,21 +119,17 @@ system_set_keymap() {
 
     einfo "Setting keymap: ${keymap}"
 
-    mkdir -p "${root}/etc"
+    mkdir -p "${root}/etc/rc.d"
 
-    # Slackware uses /etc/rc.d/rc.keymap or keymap setting in rc.conf
-    if [[ -f "${root}/etc/rc.d/rc.keymap" ]]; then
-        sed -i "s|/usr/share/kbd/keymaps/.*|/usr/share/kbd/keymaps/i386/qwerty/${keymap}.map.gz|" \
-            "${root}/etc/rc.d/rc.keymap" 2>/dev/null || true
-    fi
-
-    # Create rc.keymap if it doesn't exist
+    # Pass the keymap by NAME and let loadkeys resolve it from the keymaps tree.
+    # Hardcoding i386/qwerty/<name>.map.gz breaks every non-qwerty layout
+    # (azerty/qwertz/dvorak, jp106, ...). 'loadkeys pl' / 'loadkeys jp106'
+    # searches all subdirs, so it works for the layouts this installer offers.
     cat > "${root}/etc/rc.d/rc.keymap" <<EOF
 #!/bin/sh
-# Load the keyboard map. More strokes at:
-# /usr/share/kbd/keymaps
+# Load the keyboard map. Available maps: /usr/share/kbd/keymaps
 if [ -x /usr/bin/loadkeys ]; then
-    /usr/bin/loadkeys /usr/share/kbd/keymaps/i386/qwerty/${keymap}.map.gz
+    /usr/bin/loadkeys ${keymap}
 fi
 EOF
     chmod +x "${root}/etc/rc.d/rc.keymap" 2>/dev/null || true

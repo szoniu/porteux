@@ -236,9 +236,9 @@ checkpoint_validate() {
         iso_extract)
             [[ -d "${MOUNTPOINT}/porteux" ]] ;;
         iso_download|iso_verify)
-            ls "${MOUNTPOINT}"/tmp/PorteuX-*.iso &>/dev/null 2>&1 ;;
+            ls "${MOUNTPOINT}"/tmp/porteux-*.iso &>/dev/null 2>&1 ;;
         kernel)
-            ls "${MOUNTPOINT}/boot/vmlinuz-"* &>/dev/null 2>&1 || ls /boot/vmlinuz-* &>/dev/null 2>&1 ;;
+            ls "${MOUNTPOINT}/boot/syslinux/vmlinuz" &>/dev/null 2>&1 ;;
         *)
             return 0 ;;  # trust checkpoint for the rest
     esac

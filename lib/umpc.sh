@@ -294,12 +294,12 @@ NOTEEOF
 
     if [[ -n "${UMPC_PANEL_ORIENTATION:-}" ]]; then
         cat >> "${notes}" << NOTEEOF
-- Panel rotation: added to the kernel boot parameters (syslinux APPEND for
-  BIOS, GRUB linux line for EFI):
+- Panel rotation: added to the kernel boot parameters in every syslinux APPEND
+  line (PorteuX uses syslinux for BOTH BIOS and EFI — no GRUB):
     fbcon=rotate:${UMPC_FBCON_ROTATE} video=${UMPC_VIDEO_CONNECTOR}:panel_orientation=${UMPC_PANEL_ORIENTATION}
   If rotation is wrong: try left_side_up instead of right_side_up, or
-  change fbcon=rotate to 3. Edit /boot/syslinux/porteux.cfg (BIOS) or the
-  GRUB grub.cfg on the ESP (EFI), then reboot.
+  change fbcon=rotate to 3. Edit /boot/syslinux/porteux.cfg (BIOS) or
+  /boot/efi/boot/syslinux/porteux.cfg on the ESP (EFI), then reboot.
 
 NOTEEOF
     fi
