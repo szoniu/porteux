@@ -77,6 +77,7 @@ readonly -a CHECKPOINTS=(
     "optional_modules"
     "system_config"
     "users"
+    "umpc_quirks"
     "finalize"
 )
 
@@ -140,6 +141,16 @@ readonly -a CONFIG_VARS=(
     WWAN_DETECTED
     SURFACE_DETECTED
     SURFACE_MODEL
+
+    # UMPC (GPD Pocket/Win, Chuwi MiniBook X)
+    UMPC_DETECTED
+    UMPC_VENDOR
+    UMPC_MODEL
+    UMPC_PANEL_ORIENTATION
+    UMPC_VIDEO_CONNECTOR
+    UMPC_FBCON_ROTATE
+    UMPC_ALC287_QUIRK
+    UMPC_GPD_FAN
 
     # Dual-boot
     SHRINK_PARTITION

@@ -3,6 +3,25 @@
 source "${LIB_DIR}/protection.sh"
 
 screen_welcome() {
+    # Architecture gate — checked FIRST, before anything touches the disk. This
+    # installer is x86_64 only; on aarch64/ARM (Surface Laptop 7 / Snapdragon X,
+    # ARM laptops & SBCs) it would wipe the disk, download an x86_64 ISO, then
+    # fail to boot. NOT bypassable.
+    if ! is_supported_arch; then
+        dialog_msgbox "Unsupported architecture" \
+"Detected CPU architecture: $(uname -m 2>/dev/null || echo unknown)
+
+This installer supports ONLY amd64 / x86-64.
+
+ARM/aarch64 machines — including the Microsoft Surface Laptop 7 and other
+Qualcomm Snapdragon X laptops, ARM laptops and SBCs — are NOT supported:
+the PorteuX ISO, squashfs modules and bootloaders are all x86-64.
+Proceeding would wipe the disk and then fail to boot.
+
+Installation aborted. No changes were made to any disk."
+        return "${TUI_ABORT}"
+    fi
+
     local msg=""
     msg+="Welcome to the ${INSTALLER_NAME} v${INSTALLER_VERSION}\n"
     msg+="\n"

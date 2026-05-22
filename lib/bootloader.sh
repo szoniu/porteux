@@ -2,6 +2,19 @@
 # bootloader.sh — Bootloader installation for PorteuX (syslinux/GRUB)
 source "${LIB_DIR}/protection.sh"
 
+# _umpc_kernel_cmdline — Echo the UMPC panel-rotation kernel parameters when a
+# UMPC with a rotated portrait panel was detected, otherwise echo nothing.
+# Shared by both bootloader paths (syslinux APPEND for BIOS, GRUB linux line
+# for EFI) so first boot — GRUB menu, fbcon console, SDDM/Plasma/GNOME —
+# displays the right way up. fbcon=rotate handles the early console; the
+# video=...:panel_orientation override is consumed by KMS-aware compositors.
+_umpc_kernel_cmdline() {
+    if [[ "${UMPC_DETECTED:-0}" == "1" ]] && [[ -n "${UMPC_PANEL_ORIENTATION:-}" ]]; then
+        printf 'fbcon=rotate:%s video=%s:panel_orientation=%s' \
+            "${UMPC_FBCON_ROTATE}" "${UMPC_VIDEO_CONNECTOR}" "${UMPC_PANEL_ORIENTATION}"
+    fi
+}
+
 # bootloader_install — Install and configure the bootloader
 bootloader_install() {
     local target="${MOUNTPOINT:?MOUNTPOINT not set}"
@@ -77,6 +90,15 @@ _install_grub_efi() {
 
     if [[ "${PERSISTENCE_MODE:-changes}" == "changes" ]]; then
         boot_params+=" changes=EXIT:/${PORTEUX_CHANGES_DIR}"
+    fi
+
+    # UMPC portrait-panel quirk: rotate the early console + tell KMS the panel
+    # orientation so the GRUB-booted system comes up the right way around.
+    local umpc_cmdline
+    umpc_cmdline="$(_umpc_kernel_cmdline)"
+    if [[ -n "${umpc_cmdline}" ]]; then
+        boot_params+=" ${umpc_cmdline}"
+        einfo "UMPC panel rotation applied to GRUB boot parameters"
     fi
 
     cat > "${grub_cfg}" <<GRUBEOF
@@ -221,6 +243,22 @@ _update_syslinux_config() {
             # Add changes= to the default APPEND line
             sed -i "s|APPEND |APPEND changes=EXIT:/${PORTEUX_CHANGES_DIR} |" "${cfg}" 2>/dev/null || true
             einfo "Added persistence parameter to syslinux config"
+        fi
+    fi
+
+    # UMPC portrait-panel quirk: prepend the rotation parameters to every
+    # APPEND line so the early console + KMS compositor come up the right way
+    # around. Inserted after "APPEND " to preserve all existing parameters
+    # (including the changes= persistence param added above). Guarded against
+    # double-insertion on re-run / resume.
+    local umpc_cmdline
+    umpc_cmdline="$(_umpc_kernel_cmdline)"
+    if [[ -n "${umpc_cmdline}" ]]; then
+        if grep -q "panel_orientation=" "${cfg}"; then
+            einfo "UMPC panel rotation already configured in syslinux config"
+        else
+            sed -i "s|APPEND |APPEND ${umpc_cmdline} |" "${cfg}" 2>/dev/null || true
+            einfo "Added UMPC panel rotation to syslinux config"
         fi
     fi
 

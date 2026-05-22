@@ -14,6 +14,7 @@ readonly -a INSTALL_PHASES=(
     "optional_modules:Downloading optional modules"
     "system_config:System configuration"
     "users:User setup"
+    "umpc_quirks:Applying UMPC quirks"
     "finalize:Finalization"
 )
 
@@ -109,6 +110,9 @@ _execute_phase() {
             ;;
         users)
             system_create_users
+            ;;
+        umpc_quirks)
+            umpc_apply_quirks
             ;;
         finalize)
             system_finalize
