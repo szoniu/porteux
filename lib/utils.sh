@@ -199,9 +199,25 @@ ensure_dns() {
 }
 
 # has_network — Check basic network connectivity
+# ICMP first (fast), then HTTPS fallback: many LANs/firewalls block outbound
+# ping but allow TCP 443 — and HTTPS is what we actually need to fetch the ISO.
 has_network() {
-    ping -c 1 -W 3 cloudflare.com &>/dev/null || \
-    ping -c 1 -W 3 google.com &>/dev/null
+    ping -c 1 -W 3 cloudflare.com &>/dev/null && return 0
+    ping -c 1 -W 3 google.com &>/dev/null && return 0
+
+    # HTTPS fallback — probe the real download host (GitHub) plus a backup.
+    local url
+    if command -v curl &>/dev/null; then
+        for url in https://github.com https://cloudflare.com; do
+            curl -fsSL --max-time 5 -o /dev/null "${url}" &>/dev/null && return 0
+        done
+    fi
+    if command -v wget &>/dev/null; then
+        for url in https://github.com https://cloudflare.com; do
+            wget -q -T 5 -t 1 -O /dev/null "${url}" &>/dev/null && return 0
+        done
+    fi
+    return 1
 }
 
 # checkpoint_set — Mark a phase as completed
