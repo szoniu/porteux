@@ -106,29 +106,36 @@ iso_download() {
     mkdir -p "${download_dir}"
 
     local iso_path="${download_dir}/${ISO_FILENAME}"
-
-    # Check for existing download (resume support)
-    if [[ -f "${iso_path}" ]]; then
-        einfo "ISO already exists: ${iso_path}"
-        ISO_FILE="${iso_path}"
-        export ISO_FILE
-        return 0
-    fi
-
-    einfo "Downloading ISO: ${ISO_FILENAME}"
+    ISO_FILE="${iso_path}"
+    export ISO_FILE
 
     if [[ "${DRY_RUN:-0}" == "1" ]]; then
         einfo "[DRY-RUN] Would download ${ISO_URL} → ${iso_path}"
-        ISO_FILE="${iso_path}"
-        export ISO_FILE
         return 0
     fi
 
-    try "Downloading PorteuX ISO" \
-        curl -fSL --progress-bar -o "${iso_path}" "${ISO_URL}"
+    # If a (possibly partial) file exists, compare its size to the remote:
+    # skip if already complete, otherwise resume the rest. Never blindly trust
+    # an existing file — an interrupted download leaves a truncated ISO.
+    if [[ -f "${iso_path}" ]]; then
+        local remote_size local_size
+        remote_size=$(curl -fsSLI "${ISO_URL}" 2>/dev/null \
+            | awk 'tolower($1)=="content-length:"{v=$2} END{gsub(/\r/,"",v); print v}')
+        local_size=$(stat -c%s "${iso_path}" 2>/dev/null || echo 0)
+        if [[ -n "${remote_size}" && "${local_size}" == "${remote_size}" ]]; then
+            einfo "ISO already complete (${local_size} bytes): ${iso_path}"
+            return 0
+        fi
+        einfo "Resuming partial ISO download (${local_size}/${remote_size:-?} bytes)..."
+    else
+        einfo "Downloading ISO: ${ISO_FILENAME}"
+    fi
 
-    ISO_FILE="${iso_path}"
-    export ISO_FILE
+    # -C - resumes from where a previous attempt stopped; --retry rides out
+    # transient drops; try's "Retry" also resumes (same flags).
+    try "Downloading PorteuX ISO" \
+        curl -fSL -C - --retry 5 --retry-delay 3 --progress-bar \
+            -o "${iso_path}" "${ISO_URL}"
 
     einfo "ISO downloaded: ${iso_path}"
 }
