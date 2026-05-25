@@ -312,14 +312,11 @@ dialog_yesno() {
             _gum_drain_tty
             local _t0; _t0=$(_gum_time_ms)
             _gum_rc=0
-            # Pass choices as args (not piped) and read keys from /dev/tty:
-            # piped stdin breaks termenv/bubbletea terminal-query handling and
-            # injects phantom ESC. Unified tty stdin fixes it (esp. TERM=linux).
-            _choice=$(gum choose \
+            _choice=$(printf 'Yes\nNo\n' | gum choose \
                 --cursor "▸ " --cursor.foreground 6 \
                 --selected.foreground 0 --selected.background 6 \
                 --no-show-help \
-                -- Yes No </dev/tty) || _gum_rc=$?
+                ) || _gum_rc=$?
             if [[ ${_gum_rc} -ne 0 && $(( $(_gum_time_ms) - _t0 )) -le ${_GUM_PHANTOM_ESC_MS} && ${_gum_attempt} -lt 3 ]]; then
                 # Exited in <=1s — likely phantom ESC from terminal response
                 continue
@@ -483,15 +480,14 @@ dialog_menu() {
             _gum_drain_tty
             local _t0; _t0=$(_gum_time_ms)
             _gum_rc=0
-            # Items as args + keys from /dev/tty (not piped stdin) — avoids
-            # phantom ESC from terminal query responses (see dialog_yesno).
-            selected_line=$(gum choose --header "${header}" \
+            selected_line=$(printf '%s\n' "${gum_lines[@]}" | \
+                gum choose --header "${header}" \
                     --height "${DIALOG_LIST_HEIGHT}" \
                     --no-show-help \
                     --cursor "▸ " \
                     --cursor.foreground 6 \
                     --selected.foreground 0 --selected.background 6 \
-                    -- "${gum_lines[@]}" </dev/tty) || _gum_rc=$?
+                ) || _gum_rc=$?
             if [[ ${_gum_rc} -ne 0 && $(( $(_gum_time_ms) - _t0 )) -le ${_GUM_PHANTOM_ESC_MS} && ${_gum_attempt} -lt 3 ]]; then
                 continue
             fi
@@ -588,8 +584,8 @@ dialog_radiolist() {
             _gum_drain_tty
             local _t0; _t0=$(_gum_time_ms)
             _gum_rc=0
-            # Items as args + keys from /dev/tty (not piped stdin) — see dialog_yesno.
-            selected_line=$(gum choose "${gum_args[@]}" -- "${gum_lines[@]}" </dev/tty) || _gum_rc=$?
+            selected_line=$(printf '%s\n' "${gum_lines[@]}" | \
+                gum choose "${gum_args[@]}") || _gum_rc=$?
             if [[ ${_gum_rc} -ne 0 && $(( $(_gum_time_ms) - _t0 )) -le ${_GUM_PHANTOM_ESC_MS} && ${_gum_attempt} -lt 3 ]]; then
                 continue
             fi
@@ -690,8 +686,8 @@ dialog_checklist() {
             _gum_drain_tty
             _t0=$(_gum_time_ms)
             _gum_rc=0
-            # Items as args + keys from /dev/tty (not piped stdin) — see dialog_yesno.
-            selected_output=$(gum choose "${gum_args[@]}" -- "${gum_lines[@]}" </dev/tty) || _gum_rc=$?
+            selected_output=$(printf '%s\n' "${gum_lines[@]}" | \
+                gum choose "${gum_args[@]}") || _gum_rc=$?
             if [[ ${_gum_rc} -ne 0 && $(( $(_gum_time_ms) - _t0 )) -le ${_GUM_PHANTOM_ESC_MS} && ${_gum_attempt} -lt 3 ]]; then
                 continue
             fi
