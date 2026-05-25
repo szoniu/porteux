@@ -4,8 +4,11 @@ source "${LIB_DIR}/protection.sh"
 
 # persistence_setup — Configure persistence on the target
 # PorteuX uses AUFS overlays with the changes= boot parameter:
-#   changes=EXIT:/porteux  — persist changes; PorteuX creates a "changes" subdir
-#                            inside /porteux and stores the overlay there
+#   changes=/porteux  — persist changes (folder mode): PorteuX creates a "changes"
+#                       subdir inside /porteux and stores the overlay there,
+#                       writing continuously so changes survive reboots/crashes.
+#                       (NOT changes=EXIT:/porteux — that's the live-USB mode that
+#                       buffers in RAM and only saves at clean shutdown.)
 #   (no changes= parameter) — immutable mode (changes lost on reboot)
 persistence_setup() {
     local target="${MOUNTPOINT:?MOUNTPOINT not set}"
@@ -46,7 +49,7 @@ _setup_persistent_changes() {
     mkdir -p "${changes_dir}"
 
     einfo "Persistence directory created: /${PORTEUX_CHANGES_DIR}"
-    einfo "Boot parameter: changes=EXIT:/${PORTEUX_PERSISTENCE_DIR}"
+    einfo "Boot parameter: changes=/${PORTEUX_PERSISTENCE_DIR}"
 
     # Create a marker file to indicate persistence is configured
     echo "# PorteuX persistence configuration" > "${changes_dir}/.persistence"
@@ -58,7 +61,11 @@ _setup_persistent_changes() {
 persistence_get_boot_param() {
     case "${PERSISTENCE_MODE:-changes}" in
         changes)
-            echo "changes=EXIT:/${PORTEUX_PERSISTENCE_DIR}"
+            # Plain folder mode = continuous persistence that survives reboot/crash
+            # and loads the pre-seeded /porteux/changes at boot. (EXIT: is the live
+            # USB optimization — RAM buffer saved only at clean shutdown — wrong for
+            # a permanent install.)
+            echo "changes=/${PORTEUX_PERSISTENCE_DIR}"
             ;;
         none)
             echo ""

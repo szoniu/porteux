@@ -172,8 +172,10 @@ _bootloader_install_bios() {
 #     labels are: graphical / fresh / copy2ram / text / text-fresh (no "normal");
 #   - puts `changes=EXIT:/porteux` only on the `graphical` (and copy2ram) labels.
 # So we: emit a real `DEFAULT <label>` for the chosen BOOT_MODE; for persistence
-# `changes` ensure the chosen default label carries changes=EXIT:/<base>; for
-# `none` strip changes= from every label (truly immutable); and prepend the UMPC
+# `changes` ensure the chosen default label carries changes=/<base> (plain folder
+# mode — continuous save for a permanent install, unlike upstream's live-only
+# EXIT: buffer); for `none` strip changes= from every label (truly immutable);
+# and prepend the UMPC
 # rotation cmdline to every APPEND. The pass is idempotent (safe on resume).
 _update_syslinux_config() {
     local syslinux_dir="$1"
@@ -200,7 +202,12 @@ _update_syslinux_config() {
     esac
 
     local persist="${PERSISTENCE_MODE:-changes}"
-    local changes_param="changes=EXIT:/${PORTEUX_PERSISTENCE_DIR}"
+    # Permanent install → plain folder mode (continuous save, survives reboot/crash,
+    # loads the pre-seeded /porteux/changes at boot). NOT EXIT: — that's upstream's
+    # LIVE-USB default (RAM buffer, saved only at clean shutdown) and would drop the
+    # pre-seeded user/system config and any unsaved changes. (FAT32 ESP/root would
+    # need a .dat container instead — folder mode requires a Linux filesystem.)
+    local changes_param="changes=/${PORTEUX_PERSISTENCE_DIR}"
     local umpc_cmdline
     umpc_cmdline="$(_umpc_kernel_cmdline)"
 
