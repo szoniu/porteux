@@ -46,6 +46,16 @@ screen_progress() {
         checkpoint_migrate_to_target
     fi
 
+    # Safety guard: if the ISO was already extracted but the target isn't mounted
+    # (e.g. resume couldn't recover ROOT_PARTITION), the remaining phases would
+    # silently write to the LIVE filesystem and produce an unbootable system.
+    # Fail loudly instead of pretending to succeed.
+    if checkpoint_reached "iso_extract" && ! mountpoint -q "${MOUNTPOINT}" 2>/dev/null; then
+        die "Target ${MOUNTPOINT} is not mounted (could not recover ROOT_PARTITION on resume).
+Refusing to install to the live filesystem. Run a fresh install instead:
+  ./install.sh --install --config ${CONFIG_FILE}"
+    fi
+
     local phase_name phase_desc total=${#INSTALL_PHASES[@]}
     local idx=0
 
