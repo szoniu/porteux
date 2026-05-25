@@ -87,9 +87,21 @@ Check network connectivity, or set a custom ISO_URL before running."
     einfo "ISO filename: ${ISO_FILENAME}"
 }
 
+# _iso_ensure_filename — derive ISO_FILENAME from ISO_URL when unset.
+# The URL resolver sets ISO_FILENAME during the wizard, but only ISO_URL is a
+# CONFIG_VAR — so --install/resume (which load from the saved config) never get
+# ISO_FILENAME and would hit "unbound variable" under set -u. Derive it here.
+_iso_ensure_filename() {
+    [[ -n "${ISO_FILENAME:-}" ]] && return 0
+    [[ -n "${ISO_URL:-}" ]] || die "ISO_URL not set — cannot derive ISO filename"
+    ISO_FILENAME="$(basename "${ISO_URL}")"
+    export ISO_FILENAME
+}
+
 # iso_download — Download the PorteuX ISO
-# Expects: ISO_URL, ISO_FILENAME, MOUNTPOINT
+# Expects: ISO_URL, MOUNTPOINT (derives ISO_FILENAME from ISO_URL if unset)
 iso_download() {
+    _iso_ensure_filename
     local download_dir="${MOUNTPOINT}/tmp"
     mkdir -p "${download_dir}"
 
@@ -123,6 +135,7 @@ iso_download() {
 
 # iso_verify — Verify ISO integrity (if checksum available)
 iso_verify() {
+    _iso_ensure_filename
     local iso_path="${ISO_FILE:?ISO_FILE not set}"
 
     einfo "Verifying ISO integrity..."
