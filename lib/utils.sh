@@ -135,7 +135,6 @@ check_dependencies() {
         curl
         tar
         sha256sum
-        bc
     )
 
     for dep in "${required_deps[@]}"; do
@@ -832,12 +831,14 @@ infer_config_from_partition() {
 # bytes_to_human — Convert bytes to human readable
 bytes_to_human() {
     local bytes="$1"
+    # awk (always present; also used by bootloader.sh) instead of bc, so the
+    # installer doesn't depend on bc just to format a few sizes.
     if ((bytes >= 1073741824)); then
-        printf "%.1f GiB" "$(echo "scale=1; ${bytes}/1073741824" | bc)"
+        awk -v b="${bytes}" 'BEGIN{ printf "%.1f GiB", b/1073741824 }'
     elif ((bytes >= 1048576)); then
-        printf "%.1f MiB" "$(echo "scale=1; ${bytes}/1048576" | bc)"
+        awk -v b="${bytes}" 'BEGIN{ printf "%.1f MiB", b/1048576 }'
     elif ((bytes >= 1024)); then
-        printf "%.1f KiB" "$(echo "scale=1; ${bytes}/1024" | bc)"
+        awk -v b="${bytes}" 'BEGIN{ printf "%.1f KiB", b/1024 }'
     else
         printf "%d B" "${bytes}"
     fi
