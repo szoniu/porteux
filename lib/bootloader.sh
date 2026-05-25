@@ -56,9 +56,12 @@ _bootloader_install_efi() {
 
     # Loader + its INCLUDE target must both sit on the ESP.
     try "Copying EFI boot files" cp -a "${target}/EFI" "${esp}/"
-    if [[ -d "${target}/boot" ]]; then
+    if [[ -d "${target}/boot/syslinux" ]]; then
         mkdir -p "${esp}/boot"
-        try "Copying boot files to ESP" cp -a "${target}/boot/." "${esp}/boot/"
+        # Copy ONLY boot/syslinux (the INCLUDE target). Copying all of
+        # ${target}/boot/. recurses into the ESP mountpoint itself
+        # (${target}/boot/efi) — cp rejects "copy a directory into itself".
+        try "Copying boot files to ESP" cp -a "${target}/boot/syslinux" "${esp}/boot/"
     fi
 
     # Apply persistence + default boot mode + UMPC quirks to the cfg the firmware
