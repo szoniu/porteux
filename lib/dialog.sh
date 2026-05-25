@@ -135,6 +135,36 @@ readonly DIALOG_HEIGHT=22
 readonly DIALOG_WIDTH=76
 readonly DIALOG_LIST_HEIGHT=14
 
+# _term_is_known — Does $TERM have a terminfo entry the ncurses libs can use?
+_term_is_known() {
+    local t="$1"
+    [[ -n "${t}" ]] || return 1
+    if command -v infocmp &>/dev/null; then
+        infocmp "${t}" &>/dev/null
+    elif command -v tput &>/dev/null; then
+        tput -T "${t}" longname &>/dev/null
+    else
+        return 0   # no probe tool — assume the current TERM is usable
+    fi
+}
+
+# _ensure_known_term — ncurses backends (dialog/whiptail) abort with
+# "cannot initialize terminal type" when $TERM has no terminfo entry. Modern
+# terminals (ghostty, kitty, wezterm) ship their own terminfo that a minimal
+# live system lacks. Fall back to a widely-present xterm-compatible type.
+_ensure_known_term() {
+    _term_is_known "${TERM:-}" && return 0
+    local fb
+    for fb in xterm-256color xterm vt100; do
+        if _term_is_known "${fb}"; then
+            ewarn "TERM='${TERM:-unset}' has no terminfo entry; using TERM=${fb} for ncurses backend"
+            export TERM="${fb}"
+            return 0
+        fi
+    done
+    ewarn "No usable terminfo entry found; leaving TERM='${TERM:-unset}' (ncurses may fail)"
+}
+
 # Initialize dialog backend
 init_dialog() {
     _detect_dialog_backend
@@ -145,10 +175,14 @@ init_dialog() {
             _setup_gum_theme
             ;;
         dialog)
+            _ensure_known_term
             local rc_file="${DATA_DIR}/dialogrc"
             if [[ -f "${rc_file}" ]]; then
                 export DIALOGRC="${rc_file}"
             fi
+            ;;
+        whiptail)
+            _ensure_known_term
             ;;
     esac
 }
