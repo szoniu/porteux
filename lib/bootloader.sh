@@ -84,7 +84,14 @@ _configure_efi_boot_entry() {
         return 0
     fi
 
-    local esp_part="${ESP_PARTITION:?ESP_PARTITION not set}"
+    # Best-effort only: the removable-media fallback /EFI/BOOT/bootx64.efi boots
+    # even without a firmware entry. Don't abort the whole install if we don't
+    # know the ESP partition (e.g. on a resume that couldn't recover it).
+    if [[ -z "${ESP_PARTITION:-}" ]]; then
+        ewarn "ESP_PARTITION unknown — skipping firmware boot entry (removable-media fallback will boot)"
+        return 0
+    fi
+    local esp_part="${ESP_PARTITION}"
     local part_num
     part_num=$(echo "${esp_part}" | sed 's/.*[^0-9]\([0-9]*\)$/\1/')
     local disk

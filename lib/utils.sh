@@ -338,7 +338,8 @@ _scan_partition_for_resume() {
             _SCAN_HAS_CHECKPOINTS=1
             _SCAN_MOUNTPOINT="${mp}"
         fi
-        if [[ -f "${mp}/tmp/porteux-installer.conf" ]]; then
+        if [[ -f "${mp}/tmp/porteux-installer.conf" \
+              || -f "${mp}${CHECKPOINT_DIR_SUFFIX}/installer.conf" ]]; then
             _SCAN_HAS_CONFIG=1
         fi
         umount "${mp}" 2>/dev/null || true
@@ -393,9 +394,15 @@ _recover_resume_data() {
         cp -a "${mp}${CHECKPOINT_DIR_SUFFIX}/"* "${CHECKPOINT_DIR}/" 2>/dev/null || true
         einfo "Recovered checkpoints from ${part}"
 
+        local _disk_conf=""
         if [[ -f "${mp}/tmp/porteux-installer.conf" ]]; then
-            (umask 077; cp "${mp}/tmp/porteux-installer.conf" "${CONFIG_FILE}")
-            einfo "Recovered config from ${part}"
+            _disk_conf="${mp}/tmp/porteux-installer.conf"
+        elif [[ -f "${mp}${CHECKPOINT_DIR_SUFFIX}/installer.conf" ]]; then
+            _disk_conf="${mp}${CHECKPOINT_DIR_SUFFIX}/installer.conf"   # legacy location
+        fi
+        if [[ -n "${_disk_conf}" ]]; then
+            (umask 077; cp "${_disk_conf}" "${CONFIG_FILE}")
+            einfo "Recovered config from ${part} (${_disk_conf##*/})"
         fi
 
         [[ ${mounted} -eq 1 ]] && umount "${mp}" 2>/dev/null || true
