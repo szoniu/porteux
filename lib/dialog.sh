@@ -98,7 +98,26 @@ _setup_gum_theme() {
 }
 
 # Detect dialog backend
+# Override with PORTEUX_TUI=gum|dialog|whiptail to force a specific backend.
+# Useful when gum misbehaves on a given terminal (e.g. ghostty/kitty: OSC/CPR
+# query responses can stall gum's bubbletea input handling).
 _detect_dialog_backend() {
+    local forced="${PORTEUX_TUI:-}"
+    if [[ -n "${forced}" ]]; then
+        case "${forced}" in
+            gum)
+                _try_gum_backend && DIALOG_CMD="gum" || die "PORTEUX_TUI=gum requested but gum backend unavailable" ;;
+            dialog)
+                command -v dialog &>/dev/null && DIALOG_CMD="dialog" || die "PORTEUX_TUI=dialog requested but 'dialog' not found" ;;
+            whiptail)
+                command -v whiptail &>/dev/null && DIALOG_CMD="whiptail" || die "PORTEUX_TUI=whiptail requested but 'whiptail' not found" ;;
+            *)
+                die "Invalid PORTEUX_TUI='${forced}' (use gum, dialog or whiptail)" ;;
+        esac
+        export DIALOG_CMD
+        return 0
+    fi
+
     if _try_gum_backend; then
         DIALOG_CMD="gum"
     elif command -v dialog &>/dev/null; then
