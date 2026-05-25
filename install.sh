@@ -214,7 +214,12 @@ run_post_install() {
     if dialog_yesno "Reboot" "Would you like to reboot now?"; then
         einfo "Rebooting..."
         if [[ "${DRY_RUN}" != "1" ]]; then
-            reboot
+            sync
+            # Best-effort: on a live system reboot can return non-zero (media
+            # already removed, init not responding). Fall back to a forced reboot
+            # and never fail the already-complete install over it.
+            reboot || reboot -f || \
+                ewarn "Automatic reboot failed — reboot manually ('reboot -f' or power-cycle). Installation is complete."
         else
             einfo "[DRY-RUN] Would reboot now"
         fi
