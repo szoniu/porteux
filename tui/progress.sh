@@ -39,6 +39,7 @@ screen_progress() {
     # via their checkpoints — so re-mount the existing partitions here, or the
     # remaining phases (bootloader, system_config, users) would write to the live
     # filesystem instead of the disk. mount_filesystems only mounts; no format.
+    _resume_derive_partitions
     if checkpoint_reached "disks" && [[ -b "${ROOT_PARTITION:-}" ]] \
        && ! mountpoint -q "${MOUNTPOINT}" 2>/dev/null; then
         einfo "Resume: remounting target (${ROOT_PARTITION}) at ${MOUNTPOINT}..."
@@ -159,6 +160,39 @@ _execute_phase() {
             ewarn "Unknown phase: ${phase}"
             ;;
     esac
+}
+
+# _resume_derive_partitions — Recover ESP_PARTITION/ROOT_PARTITION on resume.
+# They're set during the disks phase, so a config saved at the end of the wizard
+# won't have them. Derive them from TARGET_DISK (which IS in the config) by
+# inspecting the existing partitions, so the target can be re-mounted.
+_resume_derive_partitions() {
+    [[ -n "${TARGET_DISK:-}" ]] || return 0
+    [[ -n "${ROOT_PARTITION:-}" && -n "${ESP_PARTITION:-}" ]] && return 0
+    command -v lsblk &>/dev/null || return 0
+
+    local fs="${FILESYSTEM:-ext4}" path fstype parttype
+
+    # ESP: prefer the EFI System partition type GUID, else first vfat partition.
+    if [[ -z "${ESP_PARTITION:-}" ]]; then
+        while read -r path fstype parttype; do
+            [[ -n "${path}" && "${parttype,,}" == "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" ]] || continue
+            ESP_PARTITION="${path}"; break
+        done < <(lsblk -lno PATH,FSTYPE,PARTTYPE "${TARGET_DISK}" 2>/dev/null)
+        if [[ -z "${ESP_PARTITION:-}" ]]; then
+            ESP_PARTITION=$(lsblk -lno PATH,FSTYPE "${TARGET_DISK}" 2>/dev/null | awk '$2=="vfat"{print $1; exit}')
+        fi
+        [[ -n "${ESP_PARTITION:-}" ]] && export ESP_PARTITION && einfo "Resume: derived ESP_PARTITION=${ESP_PARTITION}"
+    fi
+
+    # Root: first partition matching the chosen filesystem, excluding the ESP.
+    if [[ -z "${ROOT_PARTITION:-}" ]]; then
+        while read -r path fstype; do
+            [[ -n "${path}" && "${path}" != "${ESP_PARTITION:-}" && "${fstype}" == "${fs}" ]] || continue
+            ROOT_PARTITION="${path}"; break
+        done < <(lsblk -lno PATH,FSTYPE "${TARGET_DISK}" 2>/dev/null)
+        [[ -n "${ROOT_PARTITION:-}" ]] && export ROOT_PARTITION && einfo "Resume: derived ROOT_PARTITION=${ROOT_PARTITION}"
+    fi
 }
 
 # _detect_and_handle_resume — Check for existing checkpoints and offer resume
