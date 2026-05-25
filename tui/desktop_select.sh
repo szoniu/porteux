@@ -5,7 +5,6 @@ source "${LIB_DIR}/protection.sh"
 screen_desktop_select() {
     local choice
     choice=$(dialog_radiolist "Desktop Environment" \
-        "Select PorteuX desktop variant to install:\n\nEach variant is a separate ISO with its desktop pre-configured." \
         "kde"      "KDE Plasma — full-featured, modern desktop"        "on" \
         "xfce"     "Xfce — lightweight, traditional desktop"           "off" \
         "lxqt"     "LXQt — ultra-lightweight Qt desktop (3s boot)"     "off" \

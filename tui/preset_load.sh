@@ -4,7 +4,7 @@ source "${LIB_DIR}/protection.sh"
 
 screen_preset_load() {
     local choice
-    choice=$(dialog_menu "Load Preset" "Would you like to load a saved configuration?" \
+    choice=$(dialog_menu "Load Preset" \
         "skip"   "Start fresh (no preset)" \
         "file"   "Load from file" \
         "browse" "Browse example presets") || return ${TUI_BACK}
@@ -53,7 +53,7 @@ screen_preset_load() {
             fi
 
             local selected
-            selected=$(dialog_menu "Example Presets" "Select a preset:" "${presets[@]}") || return ${TUI_BACK}
+            selected=$(dialog_menu "Example Presets" "${presets[@]}") || return ${TUI_BACK}
             preset_import "${SCRIPT_DIR}/presets/${selected}"
             einfo "Preset loaded: ${selected}"
             ;;

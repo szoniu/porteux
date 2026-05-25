@@ -14,7 +14,7 @@ screen_module_select() {
     items+=("0050-multilib-lite" "32-bit compatibility libraries"            "off")
 
     local selections
-    selections=$(dialog_checklist "Optional Modules" "${msg}" "${items[@]}") || return ${TUI_BACK}
+    selections=$(dialog_checklist "Optional Modules" "${items[@]}") || return ${TUI_BACK}
 
     # Parse selections
     export ENABLE_DEVEL_MODULE="no"

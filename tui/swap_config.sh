@@ -4,7 +4,7 @@ source "${LIB_DIR}/protection.sh"
 
 screen_swap_config() {
     local choice
-    choice=$(dialog_radiolist "Swap Configuration" "Select swap method:" \
+    choice=$(dialog_radiolist "Swap Configuration" \
         "none"      "No swap (PorteuX is lightweight)"         "on" \
         "partition" "Swap partition (traditional disk swap)"    "off" \
         "file"      "Swap file on root partition"              "off") || return ${TUI_BACK}

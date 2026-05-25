@@ -16,7 +16,7 @@ screen_locale_config() {
 
     # --- Locale ---
     local locale
-    locale=$(dialog_menu "Locale" "Select system locale:" \
+    locale=$(dialog_menu "Locale" \
         "en_US.UTF-8" "English (US)" \
         "en_GB.UTF-8" "English (UK)" \
         "pl_PL.UTF-8" "Polish" \
@@ -54,7 +54,7 @@ works out of the box. This needs network access during install."
 
     # --- Keymap ---
     local keymap
-    keymap=$(dialog_menu "Keymap" "Select console keymap:" \
+    keymap=$(dialog_menu "Keymap" \
         "us"    "English (US)" \
         "uk"    "English (UK)" \
         "pl"    "Polish" \

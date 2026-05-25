@@ -14,7 +14,7 @@ screen_persistence_config() {
     msg+="  User files on separate partitions are not affected.\n"
 
     local choice
-    choice=$(dialog_radiolist "Persistence Mode" "${msg}" \
+    choice=$(dialog_radiolist "Persistence Mode" \
         "changes" "Persistent — save all changes to disk" "on" \
         "none"    "Immutable — fresh system on every boot" "off") || return ${TUI_BACK}
 

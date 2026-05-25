@@ -15,7 +15,7 @@ screen_filesystem_select() {
     fi
 
     local choice
-    choice=$(dialog_radiolist "Filesystem" "Select root filesystem:" \
+    choice=$(dialog_radiolist "Filesystem" \
         "ext4"  "ext4 — stable, widely supported (recommended)"  "on" \
         "fat32" "FAT32 — maximum portability (USB drives)"       "off" \
         "btrfs" "btrfs — snapshots, compression"                 "off" \

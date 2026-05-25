@@ -6,7 +6,7 @@ screen_boot_mode_config() {
     local msg="Select the default boot mode for PorteuX:\n"
 
     local choice
-    choice=$(dialog_radiolist "Boot Mode" "${msg}" \
+    choice=$(dialog_radiolist "Boot Mode" \
         "normal"  "Normal — graphical desktop with persistence"       "on" \
         "copy2ram" "Copy to RAM — load entire system to memory"       "off" \
         "fresh"   "Always Fresh — ignore saved changes at boot"       "off" \
