@@ -231,7 +231,47 @@ EOF
         chmod +x "${rc_local}"
     fi
 
+    # Auto-login the created user instead of the default 'guest'
+    if [[ -n "${user_name}" ]]; then
+        _configure_autologin "${config_root}" "${user_name}"
+    fi
+
     einfo "User configuration prepared (will apply on first boot)"
+}
+
+# _configure_autologin — Make the display manager log in the installer-created
+# user automatically (PorteuX otherwise auto-logins 'guest'). Writes a
+# high-priority SDDM drop-in into the persistence overlay; PorteuX's desktop
+# variants use SDDM. A wrong/absent Session only degrades to the SDDM greeter,
+# never a black screen.
+_configure_autologin() {
+    local config_root="$1" user="$2"
+
+    # Map desktop variant → SDDM Session (the .desktop in xsessions/wayland-sessions)
+    local session=""
+    case "${DESKTOP_VARIANT:-kde}" in
+        kde)      session="plasma.desktop" ;;
+        lxqt)     session="lxqt.desktop" ;;
+        xfce)     session="xfce.desktop" ;;
+        lxde)     session="LXDE.desktop" ;;
+        mate)     session="mate.desktop" ;;
+        gnome)    session="gnome.desktop" ;;
+        cinnamon) session="cinnamon.desktop" ;;
+        cosmic)   session="cosmic.desktop" ;;
+    esac
+
+    local sddm_dir="${config_root}/etc/sddm.conf.d"
+    mkdir -p "${sddm_dir}"
+    # zz- prefix → read last, so it overrides the upstream guest autologin.
+    {
+        echo "# Auto-login configured by the PorteuX installer"
+        echo "[Autologin]"
+        echo "User=${user}"
+        [[ -n "${session}" ]] && echo "Session=${session}"
+        echo "Relogin=false"
+    } > "${sddm_dir}/zz-porteux-installer-autologin.conf"
+
+    einfo "Autologin configured: ${user} (SDDM, session=${session:-default})"
 }
 
 # system_finalize — Final system configuration
