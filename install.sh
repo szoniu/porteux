@@ -290,23 +290,25 @@ main() {
             local resume_rc=0
             try_resume_from_disk || resume_rc=$?
 
-            case ${resume_rc} in
-                0)
-                    config_load "${CONFIG_FILE}"
-                    deserialize_detected_oses
-                    init_dialog
-                    screen_progress
-                    run_post_install
-                    ;;
-                *)
-                    init_dialog
-                    dialog_msgbox "Resume: Nothing Found" \
-                        "No previous installation data found.\nStarting full installation."
-                    run_configuration_wizard
-                    screen_progress
-                    run_post_install
-                    ;;
-            esac
+            # rc=0: config + checkpoints recovered from disk. rc=1: checkpoints
+            # found but no config on disk — fall back to an existing local config
+            # (e.g. the live /tmp config from the interrupted run) so we resume
+            # instead of discarding progress. rc=2: nothing → full install.
+            if [[ ${resume_rc} -eq 0 ]] || { [[ ${resume_rc} -eq 1 ]] && [[ -f "${CONFIG_FILE}" ]]; }; then
+                einfo "Resuming installation with config: ${CONFIG_FILE}"
+                config_load "${CONFIG_FILE}"
+                deserialize_detected_oses
+                init_dialog
+                screen_progress
+                run_post_install
+            else
+                init_dialog
+                dialog_msgbox "Resume: Nothing Found" \
+                    "No previous installation data found.\nStarting full installation."
+                run_configuration_wizard
+                screen_progress
+                run_post_install
+            fi
             ;;
         *)
             die "Unknown mode: ${MODE}"

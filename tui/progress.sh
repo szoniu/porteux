@@ -25,7 +25,7 @@ screen_progress() {
     # Save config to target after disk is ready
     _save_config_to_target() {
         if [[ -d "${MOUNTPOINT}" ]] && mountpoint -q "${MOUNTPOINT}" 2>/dev/null; then
-            local target_config="${MOUNTPOINT}/${CHECKPOINT_DIR_SUFFIX}/installer.conf"
+            local target_config="${MOUNTPOINT}/tmp/porteux-installer.conf"
             mkdir -p "$(dirname "${target_config}")"
             config_save "${target_config}"
             einfo "Config saved to target for resume"
@@ -34,6 +34,17 @@ screen_progress() {
 
     # Detect and handle resume
     _detect_and_handle_resume
+
+    # On resume the target is unmounted, but its phases (disks, iso_*) are skipped
+    # via their checkpoints — so re-mount the existing partitions here, or the
+    # remaining phases (bootloader, system_config, users) would write to the live
+    # filesystem instead of the disk. mount_filesystems only mounts; no format.
+    if checkpoint_reached "disks" && [[ -b "${ROOT_PARTITION:-}" ]] \
+       && ! mountpoint -q "${MOUNTPOINT}" 2>/dev/null; then
+        einfo "Resume: remounting target (${ROOT_PARTITION}) at ${MOUNTPOINT}..."
+        mount_filesystems
+        checkpoint_migrate_to_target
+    fi
 
     local phase_name phase_desc total=${#INSTALL_PHASES[@]}
     local idx=0
@@ -99,6 +110,9 @@ _execute_phase() {
             einfo "Executing disk plan..."
             disk_execute_plan
             mount_filesystems
+            # Move checkpoints onto the mounted target so resume survives a crash
+            # or reboot (reassigns CHECKPOINT_DIR to the disk).
+            checkpoint_migrate_to_target
             ;;
         iso_download)
             iso_download
