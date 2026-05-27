@@ -131,9 +131,13 @@ _download_optional_module() {
 
     einfo "Downloading optional module: ${module_name}"
 
-    # Check if already present (may have been included in ISO)
+    # Check if already present anywhere on /porteux — included in the ISO,
+    # auto-loaded by /porteux/modules/ (e.g. 08-multilanguage placed there by
+    # modules_ensure_locale_support), or already in /optional/. Without this,
+    # locale + optional-module checkbox for the same module pulls ~200 MB twice.
     local existing
-    for existing in "${target_dir}"/${module_name}*.xzm; do
+    for existing in "${target_dir}"/${module_name}*.xzm \
+                    "${MOUNTPOINT}/${PORTEUX_MODULES_DIR}"/${module_name}*.xzm; do
         if [[ -f "${existing}" ]]; then
             einfo "  Module already present: $(basename "${existing}")"
             return 0
