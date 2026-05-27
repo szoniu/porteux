@@ -31,6 +31,7 @@ screen_summary() {
     # Desktop
     summary+="PORTEUX VARIANT\n"
     summary+="  Desktop:        ${DESKTOP_VARIANT:-kde}\n"
+    summary+="  Display server: ${DISPLAY_SERVER:-auto}\n"
     summary+="  Boot mode:      ${BOOT_MODE:-normal}\n"
     summary+="  Persistence:    ${PERSISTENCE_MODE:-changes}\n"
     summary+="\n"

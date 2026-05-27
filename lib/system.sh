@@ -299,16 +299,32 @@ _configure_autologin() {
     local config_root="$1" user="$2"
 
     # Per-variant session names / launchers for each DM family.
+    # Some variants offer a real X11/Wayland choice — honor DISPLAY_SERVER set
+    # by the wizard. For Wayland-only or X11-only variants the value is forced
+    # by screen_display_server, so the inner case is effectively a no-op there.
     local sddm_sess="" lightdm_sess="" lxdm_exec=""
+    local ds="${DISPLAY_SERVER:-auto}"
     case "${DESKTOP_VARIANT:-kde}" in
-        kde)      sddm_sess="plasma.desktop";   lightdm_sess="plasma";   lxdm_exec="/usr/bin/startplasma-x11" ;;
-        lxqt)     sddm_sess="lxqt.desktop";     lightdm_sess="lxqt";     lxdm_exec="/usr/bin/startlxqt" ;;
+        kde)
+            case "${ds}" in
+                x11)     sddm_sess="plasmax11.desktop";  lightdm_sess="plasmax11";  lxdm_exec="/usr/bin/startplasma-x11" ;;
+                *)       sddm_sess="plasma.desktop";     lightdm_sess="plasma";     lxdm_exec="/usr/bin/startplasma-wayland" ;;
+            esac ;;
+        gnome)
+            case "${ds}" in
+                x11)     sddm_sess="gnome-xorg.desktop"; lightdm_sess="gnome-xorg"; lxdm_exec="/usr/bin/gnome-session" ;;
+                *)       sddm_sess="gnome.desktop";     lightdm_sess="gnome";       lxdm_exec="/usr/bin/gnome-session" ;;
+            esac ;;
+        lxqt)
+            case "${ds}" in
+                wayland) sddm_sess="lxqt-wayland.desktop"; lightdm_sess="lxqt-wayland"; lxdm_exec="/usr/bin/startlxqtwayland" ;;
+                *)       sddm_sess="lxqt.desktop";          lightdm_sess="lxqt";          lxdm_exec="/usr/bin/startlxqt" ;;
+            esac ;;
+        cosmic)   sddm_sess="cosmic.desktop";   lightdm_sess="cosmic";   lxdm_exec="" ;;
         xfce)     sddm_sess="xfce.desktop";     lightdm_sess="xfce";     lxdm_exec="/usr/bin/startxfce4" ;;
         lxde)     sddm_sess="LXDE.desktop";     lightdm_sess="LXDE";     lxdm_exec="/usr/bin/startlxde" ;;
         mate)     sddm_sess="mate.desktop";     lightdm_sess="mate";     lxdm_exec="/usr/bin/mate-session" ;;
-        gnome)    sddm_sess="gnome.desktop";    lightdm_sess="gnome";    lxdm_exec="/usr/bin/gnome-session" ;;
         cinnamon) sddm_sess="cinnamon.desktop"; lightdm_sess="cinnamon"; lxdm_exec="/usr/bin/cinnamon-session" ;;
-        cosmic)   sddm_sess="cosmic.desktop";   lightdm_sess="cosmic";   lxdm_exec="" ;;
     esac
 
     # --- SDDM drop-in ---
@@ -356,7 +372,7 @@ _configure_autologin() {
         echo "AutomaticLogin=${user}"
     } > "${gdm_dir}/custom.conf"
 
-    einfo "Autologin configured: ${user} (SDDM/LightDM/LXDM/GDM, variant=${DESKTOP_VARIANT:-?})"
+    einfo "Autologin configured: ${user} (SDDM/LightDM/LXDM/GDM, variant=${DESKTOP_VARIANT:-?}, ds=${ds})"
 }
 
 # system_finalize — Final system configuration

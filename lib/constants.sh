@@ -103,6 +103,7 @@ readonly -a CONFIG_VARS=(
 
     # PorteuX-specific
     DESKTOP_VARIANT
+    DISPLAY_SERVER
     ISO_URL
     BOOT_MODE
     PERSISTENCE_MODE

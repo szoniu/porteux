@@ -57,6 +57,7 @@ source "${TUI_DIR}/filesystem_select.sh"
 source "${TUI_DIR}/swap_config.sh"
 source "${TUI_DIR}/desktop_select.sh"
 source "${TUI_DIR}/gpu_config.sh"
+source "${TUI_DIR}/display_server.sh"
 source "${TUI_DIR}/persistence_config.sh"
 source "${TUI_DIR}/boot_mode_config.sh"
 source "${TUI_DIR}/module_select.sh"
@@ -189,6 +190,7 @@ run_configuration_wizard() {
         screen_swap_config \
         screen_desktop_select \
         screen_gpu_config \
+        screen_display_server \
         screen_persistence_config \
         screen_boot_mode_config \
         screen_module_select \
