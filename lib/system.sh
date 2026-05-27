@@ -215,14 +215,23 @@ system_create_users() {
 
     cat > "${firstboot_dir}/rc.porteux-setup" <<'SETUPEOF'
 #!/bin/sh
-# PorteuX first-boot setup (created by installer)
-# This script runs once to configure users
+# PorteuX first-boot setup (created by installer). Runs once via rc.local;
+# the marker prevents re-execution. Everything is logged so silent failures
+# (e.g. useradd not in PATH, chpasswd errors) are diagnosable post-boot.
 
-# Marker is INSTALLER-specific (not the bare ".porteux-setup-done" which
-# PorteuX itself ships in its ISO/squashfs — that name collides, making the
-# script see "already done" on first boot and skip user creation).
-MARKER="/etc/.porteux-installer-firstboot-done"
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+LOG=/var/log/porteux-installer-firstboot.log
+# Marker uses installer-specific name (NOT the bare .porteux-setup-done which
+# PorteuX itself ships in its ISO/squashfs).
+MARKER=/etc/.porteux-installer-firstboot-done
+
+# Send everything to the log — make silent failures visible.
+exec >>"$LOG" 2>&1
+echo "[$(date '+%F %T')] === porteux first-boot setup ==="
+
 if [ -f "$MARKER" ]; then
+    echo "marker exists, skipping"
     exit 0
 fi
 
@@ -231,28 +240,36 @@ SETUPEOF
     # Set root password
     if [[ -n "${root_hash}" ]]; then
         cat >> "${firstboot_dir}/rc.porteux-setup" <<SETUPEOF
-# Set root password
-echo 'root:${root_hash}' | chpasswd -e 2>/dev/null
+echo "setting root password..."
+echo 'root:${root_hash}' | /usr/sbin/chpasswd -e
+echo "  chpasswd rc=\$?"
 
 SETUPEOF
     fi
 
-    # Create user
+    # Create user (absolute paths; POSIX-compatible '>/dev/null 2>&1' instead
+    # of the bashism '&>/dev/null' that breaks if /bin/sh is dash).
     if [[ -n "${user_name}" && -n "${user_hash}" ]]; then
         cat >> "${firstboot_dir}/rc.porteux-setup" <<SETUPEOF
-# Create user: ${user_name}
-if ! id "${user_name}" &>/dev/null; then
-    useradd -m -G ${user_groups} -s /bin/bash "${user_name}"
+echo "creating user ${user_name} (groups: ${user_groups})..."
+if /usr/bin/id ${user_name} >/dev/null 2>&1; then
+    echo "  already exists"
+else
+    /usr/sbin/useradd -m -G ${user_groups} -s /bin/bash "${user_name}"
+    echo "  useradd rc=\$?"
 fi
-echo '${user_name}:${user_hash}' | chpasswd -e 2>/dev/null
+echo "setting password for ${user_name}..."
+echo '${user_name}:${user_hash}' | /usr/sbin/chpasswd -e
+echo "  chpasswd rc=\$?"
 
 SETUPEOF
     fi
 
     cat >> "${firstboot_dir}/rc.porteux-setup" <<'SETUPEOF'
-# Mark setup as done
+# Always set the marker — logs above show what actually happened. Manual
+# retry: rm -f /etc/.porteux-installer-firstboot-done && sh /etc/rc.d/rc.porteux-setup
 touch "$MARKER"
-echo "PorteuX user setup complete."
+echo "[$(date '+%F %T')] porteux first-boot setup complete"
 SETUPEOF
 
     chmod +x "${firstboot_dir}/rc.porteux-setup"

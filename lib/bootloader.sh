@@ -208,13 +208,20 @@ _update_syslinux_config() {
     # pre-seeded user/system config and any unsaved changes. (FAT32 ESP/root would
     # need a .dat container instead — folder mode requires a Linux filesystem.)
     local changes_param="changes=/${PORTEUX_PERSISTENCE_DIR}"
+    # PorteuX rc.4 reads the `login=` cheatcode and rewrites
+    # /etc/lightdm/lightdm.conf's autologin-user accordingly. This is the
+    # native LightDM autologin path on PorteuX — drop-ins in lightdm.conf.d
+    # are insufficient because lightdm.conf overrides them at runtime.
+    local login_param=""
+    [[ -n "${USERNAME:-}" ]] && login_param="login=${USERNAME}"
     local umpc_cmdline
     umpc_cmdline="$(_umpc_kernel_cmdline)"
 
     local tmp
     tmp="$(mktemp "${cfg}.XXXXXX")"
     awk -v deflabel="${deflabel}" -v persist="${persist}" \
-        -v changes_param="${changes_param}" -v umpc="${umpc_cmdline}" '
+        -v changes_param="${changes_param}" -v umpc="${umpc_cmdline}" \
+        -v login_param="${login_param}" '
     BEGIN { curlabel=""; default_done=0 }
     # Drop any pre-existing DEFAULT directive; we re-emit our own (idempotent).
     toupper($1)=="DEFAULT" { next }
@@ -227,12 +234,15 @@ _update_syslinux_config() {
             if (umpc != "" && rest !~ /panel_orientation=/) {
                 rest=" " umpc rest
             }
-            # Persistence reconciled only on the chosen default label (other labels
-            # keep upstream behavior). Done last so changes= lands at the front in a
-            # stable position — making the whole rewrite idempotent on re-run/resume.
+            # Persistence + login cheatcode reconciled only on the chosen default
+            # label (other labels keep upstream behavior). Idempotent strip-then-
+            # prepend so re-runs / resumes never accumulate duplicates.
             if (curlabel==deflabel) {
                 gsub(/[[:space:]]+changes=[^[:space:]]+/, "", rest)
                 sub(/^changes=[^[:space:]]+[[:space:]]*/, "", rest)
+                gsub(/[[:space:]]+login=[^[:space:]]+/, "", rest)
+                sub(/^login=[^[:space:]]+[[:space:]]*/, "", rest)
+                if (login_param != "") { rest=" " login_param rest }
                 if (persist=="changes") { rest=" " changes_param rest }
             }
             line="APPEND" rest
