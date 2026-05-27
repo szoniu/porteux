@@ -30,15 +30,38 @@ system_configure() {
     system_set_keymap "${config_root}"
     system_set_term_fallback "${config_root}"
     system_set_polkit_wheel_admin "${config_root}"
+    system_set_sudoers_wheel "${config_root}"
 
     einfo "System configuration complete"
 }
 
+# system_set_sudoers_wheel — Let members of the wheel group run sudo with their
+# own password. Needed because porteux-app-store uses `psu`, which OUTSIDE KDE
+# falls back to /opt/porteux-scripts/sudo.py — that script runs `sudo -Sk true`,
+# i.e. it validates the calling user against sudoers. Stock Slackware ships
+# `%wheel ALL=(ALL) ALL` commented out, so a wheel user without this drop-in
+# gets "input cleared" by sudo.py with no useful error. (The KDE path uses
+# pkexec/polkit and is covered by system_set_polkit_wheel_admin.)
+system_set_sudoers_wheel() {
+    local root="$1"
+    local sudoers_dir="${root}/etc/sudoers.d"
+    mkdir -p "${sudoers_dir}"
+    local f="${sudoers_dir}/49-porteux-wheel"
+    cat > "${f}" <<'EOF'
+# Wheel-group sudo access — added by the PorteuX installer.
+# psu (porteux-app-store) calls sudo.py outside KDE, which validates
+# the calling user via sudo — wheel members need a sudoers entry.
+%wheel ALL=(ALL) ALL
+EOF
+    chmod 0440 "${f}" 2>/dev/null || true
+    einfo "Sudoers: wheel group granted password-authenticated sudo"
+}
+
 # system_set_polkit_wheel_admin — Let members of the wheel group authenticate
 # PolicyKit admin actions with their own password. The stock PorteuX rule
-# (50-default.rules) declares only `unix-user:root` as admin, so apps like
-# porteux-app-store keep prompting for root's password. We add the created
-# user (in wheel) to the admin set — UX-standard for a desktop install.
+# (50-default.rules, patched to unix-user:root only) plus this drop-in covers
+# the pkexec path used by psu inside KDE. For non-KDE desktops psu uses
+# sudo.py instead — see system_set_sudoers_wheel.
 system_set_polkit_wheel_admin() {
     local root="$1"
     local rules_dir="${root}/etc/polkit-1/rules.d"
