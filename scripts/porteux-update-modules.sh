@@ -16,8 +16,24 @@
 
 set -Eeuo pipefail
 
-MODULES_DIR="${MODULES_DIR:-/porteux/modules}"
 API="${PORTEUX_RELEASE_API:-https://api.github.com/repos/porteux/porteux/releases/latest}"
+
+# Locate the boot partition's /porteux/modules. On a booted PorteuX system the
+# modules don't live at /porteux/modules — that path is empty / doesn't exist.
+# They sit on the boot partition mounted under /mnt/<device>/porteux/modules.
+# Honor MODULES_DIR override first, otherwise probe likely locations.
+_find_modules_dir() {
+    [[ -n "${MODULES_DIR:-}" && -d "${MODULES_DIR}" ]] && { echo "${MODULES_DIR}"; return 0; }
+    local c
+    for c in /porteux/modules /mnt/*/porteux/modules; do
+        [[ -d "${c}" ]] || continue
+        # require at least one .xzm so we don't latch onto an empty stub
+        compgen -G "${c}/*.xzm" >/dev/null 2>&1 || continue
+        echo "${c}"; return 0
+    done
+    return 1
+}
+MODULES_DIR="$(_find_modules_dir)" || { echo "ERR: could not locate /porteux/modules (set MODULES_DIR=/path to override)" >&2; exit 1; }
 
 DO_DOWNLOAD=0
 case "${1:-}" in
@@ -29,7 +45,6 @@ case "${1:-}" in
     *) echo "unknown arg: $1 (use --download or --help)" >&2; exit 2 ;;
 esac
 
-[[ -d "${MODULES_DIR}" ]] || { echo "ERR: ${MODULES_DIR} not found" >&2; exit 1; }
 command -v curl >/dev/null || { echo "ERR: curl required" >&2; exit 1; }
 if [[ ${DO_DOWNLOAD} -eq 1 && $(id -u) -ne 0 ]]; then
     echo "ERR: --download needs root (writing to ${MODULES_DIR})" >&2; exit 1
