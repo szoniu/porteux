@@ -417,6 +417,17 @@ system_finalize() {
     # Create optional directories
     mkdir -p "${target}/${PORTEUX_OPTIONAL_DIR}"
 
+    # Install the post-install module-update helper so the user can run
+    # `porteux-update-modules` after the first boot without a manual curl
+    # dance (PorteuX squashfs doesn't include /usr/local/bin by default).
+    local helper_src="${SCRIPT_DIR}/scripts/porteux-update-modules.sh"
+    if [[ -f "${helper_src}" ]]; then
+        local helper_dst="${config_root}/usr/local/bin"
+        mkdir -p "${helper_dst}"
+        install -m 755 "${helper_src}" "${helper_dst}/porteux-update-modules"
+        einfo "Installed porteux-update-modules to /usr/local/bin"
+    fi
+
     # Sync filesystem
     sync
 
