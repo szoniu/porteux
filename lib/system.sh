@@ -29,8 +29,29 @@ system_configure() {
     system_set_locale "${config_root}"
     system_set_keymap "${config_root}"
     system_set_term_fallback "${config_root}"
+    system_set_polkit_wheel_admin "${config_root}"
 
     einfo "System configuration complete"
+}
+
+# system_set_polkit_wheel_admin — Let members of the wheel group authenticate
+# PolicyKit admin actions with their own password. The stock PorteuX rule
+# (50-default.rules) declares only `unix-user:root` as admin, so apps like
+# porteux-app-store keep prompting for root's password. We add the created
+# user (in wheel) to the admin set — UX-standard for a desktop install.
+system_set_polkit_wheel_admin() {
+    local root="$1"
+    local rules_dir="${root}/etc/polkit-1/rules.d"
+    mkdir -p "${rules_dir}"
+    cat > "${rules_dir}/49-wheel-admin.rules" <<'EOF'
+// Wheel-group admin auth for PolicyKit — added by the PorteuX installer.
+// Loaded before the stock 50-default.rules; both apply, so wheel members
+// AND root can both authenticate admin actions with their own passwords.
+polkit.addAdminRule(function(action, subject) {
+    return ["unix-group:wheel"];
+});
+EOF
+    einfo "PolicyKit: wheel group granted admin authentication"
 }
 
 # system_set_term_fallback — Install a profile.d hook that maps unknown TERMs
