@@ -67,7 +67,7 @@ screen_summary() {
     # User
     summary+="USER\n"
     summary+="  Username:       ${USERNAME:-user}\n"
-    summary+="  Groups:         ${USER_GROUPS:-wheel,audio,video}\n"
+    summary+="  Groups:         ${USER_GROUPS:-wheel,audio,video,input,cdrom,plugdev,lp,netdev}\n"
     summary+="\n"
 
     # Dual-boot

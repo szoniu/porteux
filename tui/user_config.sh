@@ -56,7 +56,7 @@ screen_user_config() {
     # --- Groups ---
     local groups
     groups=$(dialog_inputbox "Groups" "User groups (comma-separated):" \
-        "${USER_GROUPS:-wheel,audio,video,input,storage,network}") || return ${TUI_BACK}
+        "${USER_GROUPS:-wheel,audio,video,input,cdrom,plugdev,lp,netdev}") || return ${TUI_BACK}
 
     export USER_GROUPS="${groups}"
     einfo "User groups: ${USER_GROUPS}"

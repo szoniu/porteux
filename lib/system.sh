@@ -211,7 +211,7 @@ system_create_users() {
     local root_hash="${ROOT_PASSWORD_HASH:-}"
     local user_name="${USERNAME:-user}"
     local user_hash="${USER_PASSWORD_HASH:-}"
-    local user_groups="${USER_GROUPS:-wheel,audio,video,input,storage,network}"
+    local user_groups="${USER_GROUPS:-wheel,audio,video,input,cdrom,plugdev,lp,netdev}"
 
     cat > "${firstboot_dir}/rc.porteux-setup" <<'SETUPEOF'
 #!/bin/sh
@@ -251,11 +251,27 @@ SETUPEOF
     # of the bashism '&>/dev/null' that breaks if /bin/sh is dash).
     if [[ -n "${user_name}" && -n "${user_hash}" ]]; then
         cat >> "${firstboot_dir}/rc.porteux-setup" <<SETUPEOF
-echo "creating user ${user_name} (groups: ${user_groups})..."
+echo "creating user ${user_name} (requested groups: ${user_groups})..."
 if /usr/bin/id ${user_name} >/dev/null 2>&1; then
     echo "  already exists"
 else
-    /usr/sbin/useradd -m -G ${user_groups} -s /bin/bash "${user_name}"
+    # Filter to groups that actually exist. Distros differ (Slackware has no
+    # 'storage'/'network' groups, Void has no 'plugdev', ...); one missing
+    # group makes useradd refuse the whole call (exit 6).
+    real_groups=""
+    for g in \$(echo "${user_groups}" | tr ',' ' '); do
+        if /usr/bin/getent group "\$g" >/dev/null 2>&1; then
+            real_groups="\${real_groups:+\$real_groups,}\$g"
+        else
+            echo "  skipping non-existent group: \$g"
+        fi
+    done
+    echo "  effective groups: \${real_groups:-<none>}"
+    if [ -n "\$real_groups" ]; then
+        /usr/sbin/useradd -m -G "\$real_groups" -s /bin/bash "${user_name}"
+    else
+        /usr/sbin/useradd -m -s /bin/bash "${user_name}"
+    fi
     echo "  useradd rc=\$?"
 fi
 echo "setting password for ${user_name}..."
