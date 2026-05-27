@@ -235,6 +235,9 @@ if [ -f "$MARKER" ]; then
     exit 0
 fi
 
+# Ensure dirs useradd touches actually exist (PorteuX module trims some).
+mkdir -p /var/spool/mail /var/mail 2>/dev/null || true
+
 SETUPEOF
 
     # Set root password
