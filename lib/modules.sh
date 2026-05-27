@@ -37,38 +37,42 @@ modules_list_installed() {
     fi
 }
 
-# modules_download_optional — Download optional modules
-# Expects: ENABLE_DEVEL_MODULE, ENABLE_MULTILANG_MODULE, ENABLE_MULTILIB_MODULE
+# modules_download_optional — Download user-selected modules into the auto-loading
+# modules dir so they're available at every boot without a manual `activate`.
+# (The wizard checkbox is opt-in — if the user picked 05-devel they want git/gcc
+# always on, not a one-shot mount. PorteuX's /porteux/optional/ exists for
+# modules a user drops in manually post-install and toggles on demand.)
+# Expects: ENABLE_DEVEL_MODULE, ENABLE_MULTILANG_MODULE, ENABLE_MULTILIB_MODULE, NVIDIA_MODULE
 modules_download_optional() {
     local target="${MOUNTPOINT:?MOUNTPOINT not set}"
-    local optional_dir="${target}/${PORTEUX_OPTIONAL_DIR}"
-    mkdir -p "${optional_dir}"
+    local modules_dir="${target}/${PORTEUX_MODULES_DIR}"
+    mkdir -p "${modules_dir}"
 
     # Locale data is not "optional" when a non-English locale was chosen — wire it
     # up first so it auto-loads at boot (handles its own DRY-RUN reporting).
     modules_ensure_locale_support
 
     if [[ "${DRY_RUN:-0}" == "1" ]]; then
-        einfo "[DRY-RUN] Would download optional modules"
+        einfo "[DRY-RUN] Would download selected modules into ${PORTEUX_MODULES_DIR}/"
         return 0
     fi
 
     local any_downloaded=0
 
     if [[ "${ENABLE_DEVEL_MODULE:-no}" == "yes" ]]; then
-        _download_optional_module "05-devel" "${optional_dir}" && any_downloaded=1
+        _download_optional_module "05-devel" "${modules_dir}" && any_downloaded=1
     fi
 
     if [[ "${ENABLE_MULTILANG_MODULE:-no}" == "yes" ]]; then
-        _download_optional_module "08-multilanguage" "${optional_dir}" && any_downloaded=1
+        _download_optional_module "08-multilanguage" "${modules_dir}" && any_downloaded=1
     fi
 
     if [[ "${ENABLE_MULTILIB_MODULE:-no}" == "yes" ]]; then
-        _download_optional_module "0050-multilib-lite" "${optional_dir}" && any_downloaded=1
+        _download_optional_module "0050-multilib-lite" "${modules_dir}" && any_downloaded=1
     fi
 
     if [[ "${NVIDIA_MODULE:-no}" == "yes" ]]; then
-        _download_nvidia_module "${optional_dir}" && any_downloaded=1
+        _download_nvidia_module "${modules_dir}" && any_downloaded=1
     fi
 
     if [[ ${any_downloaded} -eq 0 ]]; then

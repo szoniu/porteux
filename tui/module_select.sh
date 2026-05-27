@@ -4,8 +4,8 @@ source "${LIB_DIR}/protection.sh"
 
 screen_module_select() {
     local msg="Select optional modules to include:\n\n"
-    msg+="These modules will be downloaded and placed in\n"
-    msg+="/${PORTEUX_OPTIONAL_DIR}/ for manual activation.\n"
+    msg+="Selected modules will be downloaded into\n"
+    msg+="/${PORTEUX_MODULES_DIR}/ and auto-loaded at every boot.\n"
 
     local -a items=()
 
