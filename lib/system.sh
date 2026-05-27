@@ -175,7 +175,10 @@ system_create_users() {
 # PorteuX first-boot setup (created by installer)
 # This script runs once to configure users
 
-MARKER="/etc/.porteux-setup-done"
+# Marker is INSTALLER-specific (not the bare ".porteux-setup-done" which
+# PorteuX itself ships in its ISO/squashfs — that name collides, making the
+# script see "already done" on first boot and skip user creation).
+MARKER="/etc/.porteux-installer-firstboot-done"
 if [ -f "$MARKER" ]; then
     exit 0
 fi
