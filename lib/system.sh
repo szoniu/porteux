@@ -201,7 +201,23 @@ EOF
     # vconsole.conf for compatibility
     echo "KEYMAP=${keymap}" > "${root}/etc/vconsole.conf"
 
-    einfo "Keymap set to ${keymap}"
+    # X11 xkb layout — keep the desktop keyboard in sync with TTY so password
+    # dialogs in X (psu, polkit, login screens) interpret keys the same way as
+    # the install-time `passwd` / wizard input did. Without this, a 'pl' TTY
+    # keymap with a default-us X session meant special chars in passwords were
+    # mapped to different bytes → password rejected even when typed correctly.
+    local xkb_layout="${keymap}"
+    [[ "${xkb_layout}" == "uk" ]] && xkb_layout="gb"   # only common alias
+    mkdir -p "${root}/etc/X11/xorg.conf.d"
+    cat > "${root}/etc/X11/xorg.conf.d/00-keyboard.conf" <<EOF
+Section "InputClass"
+    Identifier "system-keyboard"
+    MatchIsKeyboard "on"
+    Option "XkbLayout" "${xkb_layout}"
+EndSection
+EOF
+
+    einfo "Keymap set to ${keymap} (TTY + X11 xkb=${xkb_layout})"
 }
 
 # system_create_users — Create user accounts

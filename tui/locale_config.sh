@@ -76,5 +76,14 @@ works out of the box. This needs network access during install."
     export KEYMAP="${keymap}"
     einfo "Keymap: ${KEYMAP}"
 
+    # Apply the keymap to the running install environment immediately, so
+    # passwords typed in later wizard screens (user_config) are recorded with
+    # the SAME byte mapping the booted system will use. Without this, picking
+    # a non-default keymap silently desynced install-time vs runtime passwords
+    # — and X-side prompts (psu, polkit) later refused the right password.
+    if command -v loadkeys &>/dev/null && [[ -t 1 ]]; then
+        loadkeys "${KEYMAP}" 2>/dev/null || true
+    fi
+
     return ${TUI_NEXT}
 }
