@@ -138,6 +138,50 @@ PorteuX nie ma menedżera pakietów w klasycznym sensie — dodatkowe oprogramow
 - **Dane logowania:** do momentu pierwszego uruchomienia (które stosuje Twoje ustawienia) obowiązują domyślne: `root`/`toor`, `guest`/`guest`. Skrypt first-boot ustawia Twoje hasła/użytkownika przy pierwszym starcie.
 - **UMPC:** ewentualne uwagi poinstalacyjne zapisywane są do `/root/POST-INSTALL-NOTES.txt`.
 
+## Aktualizacja systemu
+
+PorteuX nie ma `apt`/`dnf`/`slackpkg` jako głównego mechanizmu — system bazowy to **moduły squashfs** (`.xzm`) w `/porteux/modules/`. Aktualizacja = podmiana modułu na nowszą wersję z [github.com/porteux/porteux/releases](https://github.com/porteux/porteux/releases). W repo jest helper, który robi to automatycznie: porównuje datę w nazwie modułu (np. `003-lxqt-2.3.0-current-**20260228**.xzm`) z najnowszym releasem i opcjonalnie podmienia.
+
+### Jednorazowa instalacja helpera (po 1. boocie)
+
+Jako `root` na zainstalowanym systemie:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/szoniu/porteux/main/scripts/porteux-update-modules.sh \
+  -o /usr/local/bin/porteux-update-modules
+chmod +x /usr/local/bin/porteux-update-modules
+```
+
+(Zapis trafia do warstwy persistence — pozostaje po reboocie.)
+
+### Użycie
+
+```bash
+porteux-update-modules                 # tylko sprawdź — listuje co jest nieaktualne
+porteux-update-modules --download      # ściągnij nowsze do /porteux/modules/ i usuń stare
+reboot                                 # nowe moduły aktywują się przy starcie
+```
+
+Przykładowy wynik:
+
+```
+Updates available:
+  MODULE                                INSTALLED  -> LATEST
+  003-lxqt-2.3.0                        20260228   -> 20260315
+  001-core                              20260228   -> 20260315
+```
+
+Helper:
+- pyta GitHub API o ostatni release (z retry + cache),
+- dopasowuje moduły po prefiksie nazwy (bez `-current-YYYYMMDD.xzm`),
+- pobiera z `curl -C -` (wznowienie przerwanych transferów) i retry,
+- usuwa starszą wersję dopiero po udanym pobraniu nowej,
+- działa też przez `MODULES_DIR=/inna/sciezka porteux-update-modules` jeśli trzymasz moduły gdzie indziej.
+
+### Dodatkowe oprogramowanie
+
+Na pojedyncze aplikacje używaj **`porteux-app-store`** (z menu pulpitu) — to GUI do instalacji modułów z repozytorium społeczności. Helper powyżej jest do **modułów bazowych** (kernel/core/gui/desktop), App Store do reszty.
+
 ## Presety
 
 Konfigurację można zapisać i ponownie użyć:
