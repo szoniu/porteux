@@ -243,38 +243,77 @@ EOF
 }
 
 # _configure_autologin — Make the display manager log in the installer-created
-# user automatically (PorteuX otherwise auto-logins 'guest'). Writes a
-# high-priority SDDM drop-in into the persistence overlay; PorteuX's desktop
-# variants use SDDM. A wrong/absent Session only degrades to the SDDM greeter,
-# never a black screen.
+# user automatically (PorteuX otherwise auto-logins 'guest'). Each DM reads only
+# its own config, so writing configs for all major DMs is safe — only the one
+# the variant actually ships will take effect:
+#   - SDDM    (KDE / LXQt)      → drop-in
+#   - LightDM (XFCE/MATE/Cinn.) → drop-in
+#   - LXDM    (LXDE)            → full conf (no drop-in support; overlays the
+#                                 squashfs file)
+#   - GDM     (GNOME)           → full custom.conf (same caveat)
+# A wrong session value at worst degrades to the DM greeter, never a black screen.
 _configure_autologin() {
     local config_root="$1" user="$2"
 
-    # Map desktop variant → SDDM Session (the .desktop in xsessions/wayland-sessions)
-    local session=""
+    # Per-variant session names / launchers for each DM family.
+    local sddm_sess="" lightdm_sess="" lxdm_exec=""
     case "${DESKTOP_VARIANT:-kde}" in
-        kde)      session="plasma.desktop" ;;
-        lxqt)     session="lxqt.desktop" ;;
-        xfce)     session="xfce.desktop" ;;
-        lxde)     session="LXDE.desktop" ;;
-        mate)     session="mate.desktop" ;;
-        gnome)    session="gnome.desktop" ;;
-        cinnamon) session="cinnamon.desktop" ;;
-        cosmic)   session="cosmic.desktop" ;;
+        kde)      sddm_sess="plasma.desktop";   lightdm_sess="plasma";   lxdm_exec="/usr/bin/startplasma-x11" ;;
+        lxqt)     sddm_sess="lxqt.desktop";     lightdm_sess="lxqt";     lxdm_exec="/usr/bin/startlxqt" ;;
+        xfce)     sddm_sess="xfce.desktop";     lightdm_sess="xfce";     lxdm_exec="/usr/bin/startxfce4" ;;
+        lxde)     sddm_sess="LXDE.desktop";     lightdm_sess="LXDE";     lxdm_exec="/usr/bin/startlxde" ;;
+        mate)     sddm_sess="mate.desktop";     lightdm_sess="mate";     lxdm_exec="/usr/bin/mate-session" ;;
+        gnome)    sddm_sess="gnome.desktop";    lightdm_sess="gnome";    lxdm_exec="/usr/bin/gnome-session" ;;
+        cinnamon) sddm_sess="cinnamon.desktop"; lightdm_sess="cinnamon"; lxdm_exec="/usr/bin/cinnamon-session" ;;
+        cosmic)   sddm_sess="cosmic.desktop";   lightdm_sess="cosmic";   lxdm_exec="" ;;
     esac
 
+    # --- SDDM drop-in ---
     local sddm_dir="${config_root}/etc/sddm.conf.d"
     mkdir -p "${sddm_dir}"
-    # zz- prefix → read last, so it overrides the upstream guest autologin.
+    # zz- prefix → read last, overrides upstream guest autologin.
     {
         echo "# Auto-login configured by the PorteuX installer"
         echo "[Autologin]"
         echo "User=${user}"
-        [[ -n "${session}" ]] && echo "Session=${session}"
+        [[ -n "${sddm_sess}" ]] && echo "Session=${sddm_sess}"
         echo "Relogin=false"
     } > "${sddm_dir}/zz-porteux-installer-autologin.conf"
 
-    einfo "Autologin configured: ${user} (SDDM, session=${session:-default})"
+    # --- LightDM drop-in (/etc/lightdm/lightdm.conf.d/*.conf is supported) ---
+    local lightdm_dir="${config_root}/etc/lightdm/lightdm.conf.d"
+    mkdir -p "${lightdm_dir}"
+    {
+        echo "# Auto-login configured by the PorteuX installer"
+        echo "[Seat:*]"
+        echo "autologin-user=${user}"
+        echo "autologin-user-timeout=0"
+        [[ -n "${lightdm_sess}" ]] && echo "autologin-session=${lightdm_sess}"
+    } > "${lightdm_dir}/50-porteux-installer-autologin.conf"
+
+    # --- LXDM (no drop-in support; overlay a minimal lxdm.conf) ---
+    local lxdm_dir="${config_root}/etc/lxdm"
+    mkdir -p "${lxdm_dir}"
+    {
+        echo "# Auto-login configured by the PorteuX installer"
+        echo "[base]"
+        echo "autologin=${user}"
+        [[ -n "${lxdm_exec}" ]] && echo "session=${lxdm_exec}"
+        echo "[server]"
+        echo "arg=/usr/bin/X"
+    } > "${lxdm_dir}/lxdm.conf"
+
+    # --- GDM (single custom.conf; same caveat as LXDM) ---
+    local gdm_dir="${config_root}/etc/gdm"
+    mkdir -p "${gdm_dir}"
+    {
+        echo "# Auto-login configured by the PorteuX installer"
+        echo "[daemon]"
+        echo "AutomaticLoginEnable=true"
+        echo "AutomaticLogin=${user}"
+    } > "${gdm_dir}/custom.conf"
+
+    einfo "Autologin configured: ${user} (SDDM/LightDM/LXDM/GDM, variant=${DESKTOP_VARIANT:-?})"
 }
 
 # system_finalize — Final system configuration
