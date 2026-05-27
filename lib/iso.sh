@@ -15,12 +15,18 @@ porteux_resolve_asset_url() {
     local pattern="$1"
     command -v curl &>/dev/null || return 1
 
-    local json
-    json=$(curl -fsSL --max-time 15 "${PORTEUX_RELEASE_API}" 2>/dev/null || true)
-    [[ -n "${json}" ]] || return 1
+    # Cache the API response across calls — multiple modules + the ISO each call
+    # this; one API hit (with retries) beats N (and the GitHub anon rate-limit).
+    if [[ -z "${_PORTEUX_RELEASE_JSON:-}" ]]; then
+        _PORTEUX_RELEASE_JSON=$(curl -fsSL --connect-timeout 10 --max-time 30 \
+            --retry 5 --retry-delay 3 --retry-all-errors \
+            "${PORTEUX_RELEASE_API}" 2>/dev/null || true)
+        export _PORTEUX_RELEASE_JSON
+    fi
+    [[ -n "${_PORTEUX_RELEASE_JSON}" ]] || return 1
 
     local url
-    url=$(printf '%s' "${json}" \
+    url=$(printf '%s' "${_PORTEUX_RELEASE_JSON}" \
         | grep -oP '"browser_download_url":\s*"\K[^"]+' \
         | grep -iE "${pattern}" \
         | head -n1 || true)

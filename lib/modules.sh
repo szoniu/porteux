@@ -151,11 +151,18 @@ _download_optional_module() {
     fi
 
     local out="${target_dir}/$(basename "${module_url}")"
-    if curl -fsSL --max-time 120 -o "${out}" "${module_url}" 2>/dev/null; then
+    # Retry + resume so big modules (locale = 165 MB) survive flaky downloads.
+    # -C - resumes a partial file; --retry-all-errors covers transient HTTP/net hiccups.
+    if curl -fsSL -C - --connect-timeout 10 --max-time 600 \
+        --retry 5 --retry-delay 5 --retry-all-errors \
+        -o "${out}" "${module_url}" 2>/dev/null; then
         einfo "  Downloaded: $(basename "${out}")"
         return 0
     else
         ewarn "  Could not download ${module_name} module (may need manual download)"
+        # Don't leave a partial file behind — it would fool a later run into
+        # thinking the module is already there.
+        [[ -f "${out}" && ! -s "${out}" ]] && rm -f "${out}"
         return 1
     fi
 }
@@ -186,8 +193,11 @@ _download_nvidia_module() {
     fi
 
     local out="${target_dir}/$(basename "${nvidia_url}")"
-    if ! curl -fsSL --max-time 300 -o "${out}" "${nvidia_url}" 2>/dev/null; then
+    if ! curl -fsSL -C - --connect-timeout 10 --max-time 900 \
+        --retry 5 --retry-delay 5 --retry-all-errors \
+        -o "${out}" "${nvidia_url}" 2>/dev/null; then
         ewarn "  Could not download NVIDIA driver (may need manual download)"
+        [[ -f "${out}" && ! -s "${out}" ]] && rm -f "${out}"
         return 1
     fi
 
