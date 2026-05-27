@@ -28,8 +28,51 @@ system_configure() {
     system_set_timezone "${config_root}"
     system_set_locale "${config_root}"
     system_set_keymap "${config_root}"
+    system_set_term_fallback "${config_root}"
 
     einfo "System configuration complete"
+}
+
+# system_set_term_fallback — Install a profile.d hook that maps unknown TERMs
+# to a known-good one (xterm-256color). Without this, SSHing in from modern
+# terminals like Ghostty/Kitty/WezTerm — whose terminfo entries aren't shipped
+# in PorteuX — makes less/man/loginctl fail with "unknown terminal type".
+system_set_term_fallback() {
+    local root="$1"
+    mkdir -p "${root}/etc/profile.d"
+    cat > "${root}/etc/profile.d/zz-porteux-term-fallback.sh" <<'TERMSH'
+# PorteuX installer: fall back to a known TERM when the client sent one we
+# don't have terminfo for (Ghostty/Kitty/WezTerm/... over SSH). Interactive
+# shells only — never touch TERM in scripts.
+
+case $- in *i*) ;; *) return 0 2>/dev/null || exit 0 ;; esac
+[ -n "${TERM:-}" ] || return 0 2>/dev/null || exit 0
+
+_porteux_term_known() {
+    if command -v infocmp >/dev/null 2>&1; then
+        infocmp "$1" >/dev/null 2>&1
+    elif command -v tput >/dev/null 2>&1; then
+        tput -T "$1" longname >/dev/null 2>&1
+    else
+        return 0
+    fi
+}
+
+if ! _porteux_term_known "${TERM}"; then
+    _orig="${TERM}"
+    for _fb in xterm-256color xterm vt100; do
+        if _porteux_term_known "${_fb}"; then
+            export TERM="${_fb}"
+            [ -t 2 ] && printf '[porteux] TERM=%s has no terminfo entry; using %s\n' "${_orig}" "${_fb}" >&2
+            break
+        fi
+    done
+    unset _orig _fb
+fi
+unset -f _porteux_term_known
+TERMSH
+    chmod +x "${root}/etc/profile.d/zz-porteux-term-fallback.sh"
+    einfo "TERM fallback hook installed (handles SSH from ghostty/kitty/wezterm)"
 }
 
 # system_set_hostname — Set system hostname
