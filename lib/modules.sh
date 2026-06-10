@@ -134,15 +134,20 @@ modules_ensure_locale_support() {
 
 # modules_ensure_desktop_deps — Add stock Slackware packages that PorteuX's curated
 # desktop modules omit but the GUI needs at runtime:
-#   - iso-codes:     gnome-control-center's input/region chooser reads language/
-#                    country names from /usr/share/xml/iso-codes/*.xml; without it
-#                    the "add keyboard layout" dialog crashes. Added to EVERY
-#                    install (small, harmless on non-GNOME).
-#   - gnome-keyring: stores WiFi/other secrets entered via the GUI; without it,
-#                    clicking "connect" on a secured network silently does nothing.
-#                    Only the GNOME-family desktops use it (KDE ships kwallet).
+#   - iso-codes:      gnome-control-center's input/region chooser reads language/
+#                     country names from /usr/share/xml/iso-codes/*.xml; without it
+#                     the "add keyboard layout" dialog crashes.
+#   - sound-theme-freedesktop: the freedesktop event sounds libcanberra plays
+#                     (the Settings "Test speaker" button, system event sounds);
+#                     without /usr/share/sounds/freedesktop/ those are silent.
+#   - gnome-keyring:  stores WiFi/other secrets entered via the GUI; without it,
+#                     clicking "connect" on a secured network silently does nothing.
+#                     Only the GNOME-family desktops use it (KDE ships kwallet).
+# iso-codes + sound-theme-freedesktop go on EVERY install (small, used across DEs);
+# gnome-keyring only on the GNOME-family variants.
 modules_ensure_desktop_deps() {
     _seed_stock_slackware_pkg "iso-codes" "l"
+    _seed_stock_slackware_pkg "sound-theme-freedesktop" "l"
 
     case "${DESKTOP_VARIANT:-}" in
         gnome|cinnamon|mate) _seed_stock_slackware_pkg "gnome-keyring" "l" ;;
