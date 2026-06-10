@@ -35,6 +35,12 @@ readonly -a PORTEUX_OPTIONAL_MODULES=(
     "0050-multilib-lite"
 )
 
+# Slackware "current" package tree — for the stock packages PorteuX's curated .xzm
+# modules don't bundle but the desktop needs (iso-codes for gnome-control-center's
+# input/region chooser; gnome-keyring for storing GUI-entered secrets). Overridable
+# so a closer mirror can be used. mirrors.slackware.com redirects; curl -L follows.
+: "${SLACKWARE_PKG_MIRROR:=https://mirrors.slackware.com/slackware/slackware64-current/slackware64}"
+
 # PorteuX directory structure on target
 readonly PORTEUX_BASE_DIR="porteux"
 readonly PORTEUX_MODULES_DIR="${PORTEUX_BASE_DIR}/modules"

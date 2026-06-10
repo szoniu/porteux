@@ -52,6 +52,10 @@ modules_download_optional() {
     # up first so it auto-loads at boot (handles its own DRY-RUN reporting).
     modules_ensure_locale_support
 
+    # Stock Slackware packages PorteuX's curated desktop modules omit but the GUI
+    # needs (iso-codes, gnome-keyring) — add them (handles its own DRY-RUN).
+    modules_ensure_desktop_deps
+
     if [[ "${DRY_RUN:-0}" == "1" ]]; then
         einfo "[DRY-RUN] Would download selected modules into ${PORTEUX_MODULES_DIR}/"
         return 0
@@ -126,6 +130,131 @@ modules_ensure_locale_support() {
         ewarn "  Could not fetch 08-multilanguage — locale ${LOCALE:-} may fall back to C"
         ewarn "  After boot, download it and run: activate 08-multilanguage"
     fi
+}
+
+# modules_ensure_desktop_deps — Add stock Slackware packages that PorteuX's curated
+# desktop modules omit but the GUI needs at runtime:
+#   - iso-codes:     gnome-control-center's input/region chooser reads language/
+#                    country names from /usr/share/xml/iso-codes/*.xml; without it
+#                    the "add keyboard layout" dialog crashes. Added to EVERY
+#                    install (small, harmless on non-GNOME).
+#   - gnome-keyring: stores WiFi/other secrets entered via the GUI; without it,
+#                    clicking "connect" on a secured network silently does nothing.
+#                    Only the GNOME-family desktops use it (KDE ships kwallet).
+modules_ensure_desktop_deps() {
+    _seed_stock_slackware_pkg "iso-codes" "l"
+
+    case "${DESKTOP_VARIANT:-}" in
+        gnome|cinnamon|mate) _seed_stock_slackware_pkg "gnome-keyring" "l" ;;
+    esac
+}
+
+# _seed_stock_slackware_pkg — Pull one stock Slackware package and wire it into the
+# target so it's present at boot. $1 = package name prefix (e.g. "iso-codes"),
+# $2 = Slackware series dir (e.g. "l"). Primary path: build a .xzm into the
+# auto-loading modules dir (works in ALL persistence modes, like the base modules).
+# Fallback when the live host lacks mksquashfs: seed files into the AUFS changes
+# overlay (only effective with PERSISTENCE_MODE=changes — warns otherwise).
+# Returns 0 on success / already-present, 1 if it couldn't be wired in.
+_seed_stock_slackware_pkg() {
+    local pkg="$1" series="$2"
+    local target="${MOUNTPOINT:?MOUNTPOINT not set}"
+    local modules_dir="${target}/${PORTEUX_MODULES_DIR}"
+    mkdir -p "${modules_dir}"
+
+    # Idempotent across resume: already placed as a module?
+    local existing
+    for existing in "${modules_dir}"/${pkg}-[0-9]*.xzm; do
+        if [[ -e "${existing}" ]]; then
+            einfo "${pkg} already present ($(basename "${existing}")) — skipping"
+            return 0
+        fi
+    done
+
+    if [[ "${DRY_RUN:-0}" == "1" ]]; then
+        einfo "[DRY-RUN] Would add ${pkg} (stock Slackware ${series}/ — missing from PorteuX modules)"
+        return 0
+    fi
+
+    einfo "Adding ${pkg} (stock Slackware package missing from PorteuX desktop modules)"
+
+    # Resolve the exact filename from the mirror listing — versions bump over time,
+    # so they can't be hardcoded. sort -V | tail picks the newest.
+    local listing pkg_file
+    listing=$(curl -fsSL --connect-timeout 10 --max-time 30 --retry 3 --retry-delay 3 \
+        "${SLACKWARE_PKG_MIRROR}/${series}/" 2>/dev/null || true)
+    pkg_file=$(printf '%s' "${listing}" | grep -oE "${pkg}-[0-9][^\"<]*\.txz" | sort -uV | tail -n1)
+
+    if [[ -z "${pkg_file}" ]]; then
+        ewarn "  Could not find ${pkg} on ${SLACKWARE_PKG_MIRROR}/${series}/"
+        ewarn "  After boot: download ${pkg}-*.txz from a Slackware mirror and 'installpkg' it"
+        return 1
+    fi
+
+    local workdir txz_path extract_dir
+    workdir=$(mktemp -d "${TMPDIR:-/tmp}/porteux-pkg.XXXXXX")
+    txz_path="${workdir}/${pkg_file}"
+    extract_dir="${workdir}/root"
+    mkdir -p "${extract_dir}"
+
+    if ! curl -fsSL -C - --connect-timeout 10 --max-time 180 \
+        --retry 5 --retry-delay 3 --retry-all-errors \
+        -o "${txz_path}" "${SLACKWARE_PKG_MIRROR}/${series}/${pkg_file}" 2>/dev/null; then
+        ewarn "  Could not download ${pkg_file} — skipping ${pkg}"
+        rm -rf "${workdir}"
+        return 1
+    fi
+
+    # Slackware .txz is an xz-compressed tarball; modern tar autodetects.
+    if ! tar -xf "${txz_path}" -C "${extract_dir}" 2>/dev/null; then
+        ewarn "  Could not extract ${pkg_file} — skipping ${pkg}"
+        rm -rf "${workdir}"
+        return 1
+    fi
+
+    # Slackware stores library/version symlinks as commands in install/doinst.sh,
+    # NOT as real symlinks in the tarball. Run it best-effort in the extracted root
+    # so those symlinks materialize before we pack (matters for packages with libs
+    # like gnome-keyring; harmless for pure-data ones like iso-codes). Then drop the
+    # packaging metadata — we only want the filesystem payload.
+    if [[ -f "${extract_dir}/install/doinst.sh" ]]; then
+        ( cd "${extract_dir}" && sh install/doinst.sh ) 2>/dev/null || true
+    fi
+    rm -rf "${extract_dir}/install"
+
+    if command -v mksquashfs &>/dev/null; then
+        # Primary path: a real auto-loading module. zstd matches PorteuX's modules.
+        local xzm="${modules_dir}/${pkg_file%.txz}.xzm"
+        if mksquashfs "${extract_dir}" "${xzm}" -comp zstd -b 256K -noappend -no-progress &>/dev/null; then
+            einfo "  Built $(basename "${xzm}") into auto-loading modules"
+            rm -rf "${workdir}"
+            return 0
+        fi
+        ewarn "  mksquashfs failed — falling back to seeding the changes overlay"
+    else
+        einfo "  mksquashfs not available — seeding ${pkg} into the changes overlay"
+    fi
+
+    # Fallback: drop the files into the AUFS changes overlay. Only visible at
+    # runtime with PERSISTENCE_MODE=changes.
+    if [[ "${PERSISTENCE_MODE:-changes}" != "changes" ]]; then
+        ewarn "  PERSISTENCE_MODE=${PERSISTENCE_MODE:-} (immutable) + no mksquashfs on the live host:"
+        ewarn "  ${pkg} can't be wired in. Install squashfs-tools on the live host and re-run,"
+        ewarn "  or 'installpkg ${pkg}' inside PorteuX after boot."
+        rm -rf "${workdir}"
+        return 1
+    fi
+
+    local changes_dir="${target}/${PORTEUX_CHANGES_DIR}"
+    mkdir -p "${changes_dir}"
+    if cp -a "${extract_dir}/." "${changes_dir}/" 2>/dev/null; then
+        einfo "  Seeded ${pkg} into the changes overlay"
+        rm -rf "${workdir}"
+        return 0
+    fi
+    ewarn "  Could not seed ${pkg} into ${changes_dir}"
+    rm -rf "${workdir}"
+    return 1
 }
 
 # _download_optional_module — Download a single optional module
