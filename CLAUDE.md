@@ -1,5 +1,7 @@
 # CLAUDE.md — Project context for Claude Code
 
+> Testing notes (shared `lib/dialog.sh` conventions across the 6 sibling installers, gum/TERM quirks, real-hardware test loop) → **[docs/TESTING-NOTES.md](docs/TESTING-NOTES.md)**.
+
 ## What this is
 
 Interactive TUI installer for PorteuX Linux written in Bash. Goal: boot any live Linux ISO with networking, clone the repo, run `./install.sh` and be guided through the entire process from disk partitioning to a working PorteuX system. After a crash: `./install.sh --resume` scans disks and resumes from the last checkpoint.
