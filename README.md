@@ -140,7 +140,12 @@ PorteuX nie ma menedżera pakietów w klasycznym sensie — dodatkowe oprogramow
 
 ## Aktualizacja systemu
 
-PorteuX nie ma `apt`/`dnf`/`slackpkg` jako głównego mechanizmu — system bazowy to **moduły squashfs** (`.xzm`) w `/porteux/modules/`. Aktualizacja = podmiana modułu na nowszą wersję z [github.com/porteux/porteux/releases](https://github.com/porteux/porteux/releases). W repo jest helper, który robi to automatycznie: porównuje datę w nazwie modułu (np. `003-lxqt-2.3.0-current-**20260228**.xzm`) z najnowszym releasem i opcjonalnie podmienia.
+PorteuX nie ma `apt`/`dnf`/`slackpkg` jako głównego mechanizmu — system to **moduły squashfs** (`.xzm`) w `/porteux/modules/`. Są **dwie** ścieżki aktualizacji, bo release publikuje jako osobne pliki tylko część modułów:
+
+- **Moduły opcjonalne** (`05-devel`, `08-multilanguage`, `0050-multilib-lite`) — publikowane jako **datowane assety** (np. `08-multilanguage-current-**20260620**.xzm`). Podmiana po nowszym datowniku: tryb `--download`.
+- **Baza** (`000-kernel`/`001-core`/`002-gui`/`003-<desktop>` + kernel/initrd) — **NIE jest publikowana jako osobne assety**, siedzi tylko wewnątrz ISO. Zmiana wersji systemu (np. **2.6 → 2.7**) = podmiana bazy z nowego ISO: tryb `--upgrade-base`.
+
+Oba tryby robi ten sam helper z repo ([github.com/porteux/porteux/releases](https://github.com/porteux/porteux/releases)).
 
 ### Jednorazowa instalacja helpera (po 1. boocie)
 
@@ -154,7 +159,7 @@ chmod +x /usr/local/bin/porteux-update-modules
 
 (Zapis trafia do warstwy persistence — pozostaje po reboocie.)
 
-### Użycie
+### Aktualizacja modułów opcjonalnych
 
 ```bash
 porteux-update-modules                 # tylko sprawdź — listuje co jest nieaktualne
@@ -167,20 +172,49 @@ Przykładowy wynik:
 ```
 Updates available:
   MODULE                                INSTALLED  -> LATEST
-  003-lxqt-2.3.0                        20260228   -> 20260315
-  001-core                              20260228   -> 20260315
+  08-multilanguage                      20260228   -> 20260620
+  05-devel                              20260228   -> 20260620
 ```
 
-Helper:
+Helper (tryb opcjonalny):
 - pyta GitHub API o ostatni release (z retry + cache),
 - dopasowuje moduły po prefiksie nazwy (bez `-current-YYYYMMDD.xzm`),
 - pobiera z `curl -C -` (wznowienie przerwanych transferów) i retry,
 - usuwa starszą wersję dopiero po udanym pobraniu nowej,
 - działa też przez `MODULES_DIR=/inna/sciezka porteux-update-modules` jeśli trzymasz moduły gdzie indziej.
 
+> `--download` podbija **tylko moduły opcjonalne**. Bazy (`000`–`003`) tu nie zobaczysz — nie jest publikowana jako asset. Do zmiany wersji systemu służy `--upgrade-base` poniżej.
+
+### Pełna aktualizacja wersji — np. 2.6 → 2.7 (`--upgrade-base`)
+
+Baza (kernel/core/gui/desktop) żyje tylko w ISO, więc upgrade wersji pobiera nowe ISO i podmienia bazę **in-place**, zachowując Twoje dane:
+
+```bash
+porteux-update-modules --upgrade-base                 # pobierz ISO dla wykrytego wariantu i podmień bazę
+porteux-update-modules --upgrade-base --iso /mnt/usb  # użyj już zamontowanego ISO/USB (bez pobierania 1 GB)
+```
+
+Co robi:
+- wykrywa Twój wariant pulpitu z modułu `003-<desktop>` i bierze pasujące ISO (kde/xfce/lxqt/…),
+- podmienia `000`–`003` + `vmlinuz`/`initrd` (+ `EFI/BOOT`), **zostawia `/porteux/changes` (Twoje dane) i `/porteux/optional`**, zachowuje Twój `porteux.cfg`,
+- backup starej bazy → `/porteux/.upgrade-backup-<data>` i wypisuje gotowy **rollback** one-liner.
+
+**⚠️ Najważniejsze — skąd to odpalić.** Nie nadpiszesz bazy, która jest właśnie w użyciu (moduły `.xzm` działającego systemu są loop-montowane). Helper sprawdza to przez `losetup` i **odmówi na żywym systemie**. Dwa bezpieczne sposoby — **żaden to nie reinstalacja**:
+
+1. **Ten sam dysk, bez drugiego USB** — zbootuj obecne PorteuX z cheatcode **`copy2ram`** (cała baza ląduje w RAM, pliki na dysku są wolne), potem:
+   ```bash
+   sudo porteux-update-modules --upgrade-base
+   ```
+2. **Z innego medium** — zbootuj z USB z nową wersją (lub dowolnego live), wskaż instalkę na dysku:
+   ```bash
+   sudo MODULES_DIR=/mnt/<dev>/porteux/modules porteux-update-modules --upgrade-base
+   ```
+
+Po sukcesie: `reboot`. Jeśli po dużym skoku (glibc/GCC/KDE/Qt) stary overlay `changes` rozjedzie się z nową bazą — użyj rollbacku z komunikatu helpera. (`--force` pomija bramkę live — tylko gdy wiesz, co robisz.)
+
 ### Dodatkowe oprogramowanie
 
-Na pojedyncze aplikacje używaj **`porteux-app-store`** (z menu pulpitu) — to GUI do instalacji modułów z repozytorium społeczności. Helper powyżej jest do **modułów bazowych** (kernel/core/gui/desktop), App Store do reszty.
+Na pojedyncze aplikacje używaj **`porteux-app-store`** (z menu pulpitu) — to GUI do instalacji modułów z repozytorium społeczności. Helper powyżej obsługuje **moduły systemu** (opcjonalne przez `--download`, pełna baza/wersja przez `--upgrade-base`), App Store — resztę.
 
 ## Presety
 
