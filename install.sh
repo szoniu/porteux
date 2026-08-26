@@ -210,6 +210,10 @@ run_configuration_wizard() {
 run_post_install() {
     einfo "=== Post-installation ==="
 
+    # Głośno o tym, co user pominął w try(). Musi iść PRZED unmount, bo
+    # rejestr leży na dysku docelowym.
+    skipped_steps_report || true
+
     # Unmount everything
     unmount_filesystems
 

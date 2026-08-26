@@ -71,3 +71,67 @@ init_logging() {
     : > "${LOG_FILE}"
     einfo "Logging to ${LOG_FILE}"
 }
+
+# --- Trwały log + rejestr pominiętych kroków ------------------------------
+#
+# Do tej pory log żył wyłącznie w /tmp, czyli na tmpfs live ISO. Po awarii,
+# reboocie i `--resume` nie było ŻADNEGO logu do post-mortem — dokładnie
+# wtedy, kiedy jest najbardziej potrzebny. Gdy tylko dysk docelowy jest
+# zamontowany, przenosimy log na niego i dopisujemy dalej.
+#
+# Tryb APPEND, nie truncate: przy wznowieniu historia poprzednich przebiegów
+# musi zostać, bo najciekawsze jest zwykle to, co się działo PRZED awarią.
+log_relocate_to_target() {
+    [[ "${DRY_RUN:-0}" == "1" ]] && return 0
+    mountpoint -q "${MOUNTPOINT}" 2>/dev/null || return 0
+
+    local target_dir="${MOUNTPOINT}/porteux"
+    mkdir -p "${target_dir}" 2>/dev/null || return 0
+
+    local target="${target_dir}/porteux-installer.log"
+
+    # Dotychczasową treść dokładamy na koniec — nie nadpisujemy tego, co
+    # zostało po wcześniejszym przebiegu.
+    if [[ -f "${LOG_FILE}" && "${LOG_FILE}" != "${target}" ]]; then
+        cat "${LOG_FILE}" >> "${target}" 2>/dev/null || true
+    fi
+
+    LOG_FILE="${target}"
+    SKIPPED_LOG="${target_dir}/porteux-installer-skipped.log"
+    export LOG_FILE SKIPPED_LOG
+    einfo "Log przeniesiony na dysk docelowy: ${target} (przetrwa reboot)"
+}
+
+# skipped_step_record — zapamiętaj krok, który user pominął w try().
+#
+# Wybór „continue" w menu recovery połyka błąd, a faza i tak kończy się
+# checkpointem — niepełna instalacja wygląda potem na kompletną i nie ma po
+# niej śladu poza logiem, którego nikt nie czyta. Rejestr sprawia, że
+# pominięte kroki wracają na końcu jako głośne ostrzeżenie.
+skipped_step_record() {
+    local desc="$1"
+    : "${SKIPPED_LOG:=/tmp/porteux-installer-skipped.log}"
+    mkdir -p "$(dirname "${SKIPPED_LOG}")" 2>/dev/null || true
+    printf '%s\n' "${desc}" >> "${SKIPPED_LOG}" 2>/dev/null || true
+}
+
+# skipped_steps_report — wypisz pominięte kroki. Zwraca 1, gdy coś pominięto,
+# żeby wywołujący mógł dorzucić to do finalnego komunikatu.
+skipped_steps_report() {
+    local f="${SKIPPED_LOG:-/tmp/porteux-installer-skipped.log}"
+    [[ -s "${f}" ]] || return 0
+
+    local n
+    n=$(wc -l < "${f}" 2>/dev/null | tr -d ' ') || n="?"
+    ewarn "════════════════════════════════════════════════════════"
+    ewarn "UWAGA: ${n} krok(ów) POMINIĘTO podczas instalacji."
+    ewarn "System jest zainstalowany, ale NIEKOMPLETNY:"
+    local line
+    while IFS= read -r line; do
+        [[ -n "${line}" ]] && ewarn "  - ${line}"
+    done < "${f}"
+    ewarn ""
+    ewarn "Lista: ${f}"
+    ewarn "════════════════════════════════════════════════════════"
+    return 1
+}
