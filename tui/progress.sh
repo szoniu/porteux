@@ -118,8 +118,17 @@ _execute_phase() {
             preflight_checks
             ;;
         disks)
-            einfo "Executing disk plan..."
-            disk_execute_plan
+            # Resume onto a disk that already holds a PorteuX install but lost
+            # its 'disks' checkpoint: repartitioning here would wipe it.
+            # Refuse the destructive plan, mount what is there, carry on.
+            if [[ "${MODE:-}" == "resume" ]] && _resume_target_has_system; then
+                ewarn "Resume: ${ROOT_PARTITION:-${RESUME_FOUND_PARTITION:-?}} already holds an"
+                ewarn "installed PorteuX system but the 'disks' checkpoint is missing."
+                ewarn "Refusing to reformat — mounting the existing system instead."
+            else
+                einfo "Executing disk plan..."
+                disk_execute_plan
+            fi
             mount_filesystems
             # Move checkpoints onto the mounted target so resume survives a crash
             # or reboot (reassigns CHECKPOINT_DIR to the disk).
