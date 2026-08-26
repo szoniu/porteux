@@ -23,7 +23,11 @@ nvidia_generation() {
 
     if (( dec_id >= 0x2900 )); then
         echo "blackwell"
-    elif (( dec_id >= 0x2700 )); then
+    elif (( dec_id >= 0x2600 )); then
+        # Ada zaczyna się od AD102 = 0x2684 (RTX 4090), nie od 0x2700: stary
+        # próg klasyfikował 4090 jako Ampere. Ampere kończy się w okolicach
+        # 0x25xx (GA107 = 0x25a0), więc 0x2600 to czysty podział.
+        # Ten sam bug był w gentoo (Forgejo gentoo#3) i w voidzie (46a1a17).
         echo "ada"
     elif (( dec_id >= 0x2200 )); then
         echo "ampere"
