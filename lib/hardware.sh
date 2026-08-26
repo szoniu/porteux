@@ -90,37 +90,41 @@ detect_gpu() {
     done
 
     if [[ ${#gpu_lines[@]} -ge 2 ]]; then
-        # Multiple GPUs — classify iGPU vs dGPU
-        # Heuristic: PCI slot 00:xx.x = on-die (iGPU), 01:+ = PCIe (dGPU)
-        # Also: NVIDIA is always dGPU, Intel is always iGPU
+        # Multiple GPUs — classify iGPU vs dGPU by VENDOR COMPOSITION.
+        # NVIDIA is always discrete, Intel always integrated; AMD is decided
+        # from what else is present. The old "AMD on PCI bus 00 = iGPU"
+        # heuristic was wrong: modern AMD APU iGPUs sit on a high bus
+        # (c1:/64:), never 00 — that slot belongs to the Intel iGPU. It
+        # misclassified AMD-iGPU + NVIDIA-dGPU laptops (Legion/ROG AMD),
+        # which then lost hybrid/PRIME handling entirely. Fixed first in the
+        # Gentoo installer, then void (c3f2020).
         local igpu_idx=-1 dgpu_idx=-1
         local i
+        local -a amd_idxs=()
         for (( i=0; i<${#gpu_lines[@]}; i++ )); do
-            local slot="${gpu_slots[$i]}"
             local vendor="${gpu_vendors[$i]}"
-            local slot_bus="${slot%%:*}"
-
-            # NVIDIA is always discrete
-            if [[ "${vendor}" == "nvidia" ]]; then
-                dgpu_idx=${i}
-                continue
-            fi
-
-            # Intel is always integrated
-            if [[ "${vendor}" == "intel" ]]; then
-                igpu_idx=${i}
-                continue
-            fi
-
-            # AMD: use PCI slot heuristic — bus 00 = iGPU, otherwise dGPU
-            if [[ "${slot_bus}" == "00" ]]; then
-                igpu_idx=${i}
-            else
-                dgpu_idx=${i}
-            fi
+            case "${vendor}" in
+                nvidia) dgpu_idx=${i} ;;
+                intel)  igpu_idx=${i} ;;
+                amd)    amd_idxs+=("${i}") ;;
+            esac
         done
 
-        # If we found both iGPU and dGPU — hybrid setup
+        if (( ${#amd_idxs[@]} == 1 )); then
+            if [[ ${dgpu_idx} -ge 0 && ${igpu_idx} -lt 0 ]]; then
+                igpu_idx=${amd_idxs[0]}        # AMD iGPU + NVIDIA dGPU
+            elif [[ ${igpu_idx} -ge 0 && ${dgpu_idx} -lt 0 ]]; then
+                dgpu_idx=${amd_idxs[0]}        # Intel iGPU + AMD dGPU
+            else
+                dgpu_idx=${amd_idxs[0]}        # AMD as the extra GPU
+            fi
+        elif (( ${#amd_idxs[@]} >= 2 )); then
+            # AMD iGPU + AMD dGPU (e.g. Framework 16): same driver either
+            # way, assign deterministically so hybrid is reported correctly.
+            igpu_idx=${amd_idxs[0]}
+            dgpu_idx=${amd_idxs[1]}
+        fi
+
         if [[ ${igpu_idx} -ge 0 && ${dgpu_idx} -ge 0 ]]; then
             HYBRID_GPU="yes"
             IGPU_VENDOR="${gpu_vendors[$igpu_idx]}"
