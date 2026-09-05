@@ -16,6 +16,8 @@
 #   porteux-update-modules --upgrade-base --iso /mnt/sdb1      # reuse a mounted ISO tree
 #   porteux-update-modules --fix-persistence       # put changes= back on every boot label
 #   porteux-update-modules --fix-persistence --cfg /mnt/sda1/boot/syslinux/porteux.cfg
+#   porteux-update-modules --upgrade-base --esp /mnt/sda1   # UEFI: second kernel copy
+#   porteux-update-modules --upgrade-base --no-esp          # BIOS-only install
 #   MODULES_DIR=/path porteux-update-modules ...   # override extra-modules location
 #   BASE_DIR=/path porteux-update-modules ...      # override base-modules location
 #
@@ -52,12 +54,12 @@ API="${PORTEUX_RELEASE_API:-https://api.github.com/repos/porteux/porteux/release
 # system they are NOT at /porteux — that path is empty or absent; the boot
 # partition is mounted under /mnt/<device>. An explicit override is a contract:
 # if it is set but wrong, fail loudly instead of silently probing elsewhere.
-_die_override() { echo "ERR: $1=$2 is not a usable directory (no *.xzm inside?)" >&2; exit 1; }
-
 _find_dir() {   # $1 = leaf (base|modules|optional), $2 = override value, $3 = override name
-    local leaf="$1" override="$2" name="$3" c
+    local leaf="$1" override="$2" c
     if [[ -n "${override}" ]]; then
-        [[ -d "${override}" ]] || _die_override "${name}" "${override}"
+        # Validated in the main body — an `exit` here would only kill the $( )
+        # subshell and the caller would silently fall through to autodetection.
+        [[ -d "${override}" ]] || return 1
         echo "${override}"; return 0
     fi
     for c in "/porteux/${leaf}" /mnt/*/porteux/"${leaf}"; do
@@ -74,6 +76,8 @@ _find_dir() {   # $1 = leaf (base|modules|optional), $2 = override value, $3 = o
 _find_base_dir() {
     local d
     if d="$(_find_dir base "${BASE_DIR:-}" BASE_DIR)"; then echo "${d}"; return 0; fi
+    # An explicit override is a contract: never quietly fall back to a probe.
+    [[ -z "${BASE_DIR:-}" ]] || return 1
     for d in /porteux/modules /mnt/*/porteux/modules; do
         compgen -G "${d}/003-*.xzm" >/dev/null 2>&1 || continue
         echo "${d}"; return 0
@@ -102,7 +106,9 @@ _persistence_status() {
 # ---- argument parsing -------------------------------------------------------
 MODE="optional"        # optional | upgrade-base | fix-persistence
 DO_DOWNLOAD=0
-declare -a CFG_PATHS=()
+ASSUME_YES=0
+declare -a CFG_PATHS=() ESP_PATHS=()
+NO_ESP=0
 ISO_SRC=""
 FORCE=0
 while [[ $# -gt 0 ]]; do
@@ -113,15 +119,27 @@ while [[ $# -gt 0 ]]; do
         --iso)              shift; ISO_SRC="${1:?--iso needs a path}" ;;
         --base-dir)         shift; BASE_DIR="${1:?--base-dir needs a path}" ;;
         --cfg)              shift; CFG_PATHS+=("${1:?--cfg needs a path}") ;;
+        --esp)              shift; ESP_PATHS+=("${1:?--esp needs a path}") ;;
+        --no-esp)           NO_ESP=1 ;;
+        --yes|-y)           ASSUME_YES=1 ;;
         --modules-dir)      shift; MODULES_DIR="${1:?--modules-dir needs a path}" ;;
         --force)            FORCE=1 ;;
         -h|--help)      awk 'NR==1{next} /^#/{sub(/^# ?/,"");print;next}{exit}' "$0"; exit 0 ;;
-        *) echo "unknown arg: $1 (use --download, --upgrade-base, --fix-persistence, --iso, --base-dir, --modules-dir, --force, --help)" >&2; exit 2 ;;
+        *) echo "unknown arg: $1 (use --download, --upgrade-base, --fix-persistence, --iso, --base-dir, --modules-dir, --esp, --no-esp, --cfg, --yes, --force, --help)" >&2; exit 2 ;;
     esac
     shift
 done
 
 command -v curl >/dev/null || { echo "ERR: curl required" >&2; exit 1; }
+
+# An override that points nowhere must stop the run here — not fall through to
+# autodetection and then operate on some other install.
+for _ov in BASE_DIR MODULES_DIR; do
+    if [[ -n "${!_ov:-}" && ! -d "${!_ov}" ]]; then
+        echo "ERR: ${_ov}=${!_ov} is not a directory" >&2; exit 1
+    fi
+done
+unset _ov
 
 # Tell the user up front which session they are in — a session without an
 # on-disk overlay is exactly why this script sometimes "doesn't exist".
@@ -163,12 +181,28 @@ fix_persistence() {
     done
     [[ ${#cfgs[@]} -gt 0 ]] || { echo "ERR: no syslinux porteux.cfg found (looked in: ${search[*]}). Point at it with --cfg /mnt/<dev>/boot/syslinux/porteux.cfg" >&2; exit 1; }
 
+    echo "Boot configs to repair:"
+    printf '  %s\n' "${cfgs[@]}"
+    # More than one candidate found by probing means we might be touching a
+    # DIFFERENT PorteuX install (second disk, another USB). Make that a decision.
+    if [[ ${#CFG_PATHS[@]} -eq 0 && ${#cfgs[@]} -gt 1 && ${ASSUME_YES} -ne 1 ]]; then
+        echo "ERR: more than one install found. Re-run with --yes to repair all of them," >&2
+        echo "     or name the one you mean with --cfg <path>." >&2
+        exit 1
+    fi
+
     # LOGIN_USER=<name> re-applies the autologin cheatcode while we are here;
     # unset means "leave whatever login= the labels already carry".
     local login_param=""
     [[ -n "${LOGIN_USER:-}" ]] && login_param="login=${LOGIN_USER}"
+    local rc=0
     for c in "${cfgs[@]}"; do
-        cp -a "${c}" "${c}.bak-$(date +%Y%m%d-%H%M%S)"
+        # cp -f, never cp -a: the ESP copy lives on FAT32, where --preserve=all
+        # fails with "Operation not permitted".
+        if ! cp -f "${c}" "${c}.bak-$(date +%Y%m%d-%H%M%S)"; then
+            echo "WARN: cannot write a backup next to ${c} — skipping it" >&2
+            rc=1; continue
+        fi
         awk -v changes_param="changes=${base}" -v login_param="${login_param}" '
         BEGIN { curlabel="" }
         {
@@ -190,13 +224,25 @@ fix_persistence() {
                 line="APPEND" rest
             }
             print line
-        }' "${c}" > "${c}.new" && cat "${c}.new" > "${c}" && rm -f "${c}.new"
-        echo "fixed: ${c}  (backup: ${c}.bak-*)"
-        grep -nE '^(DEFAULT|LABEL|APPEND)' "${c}" | sed 's/^/    /'
+        }' "${c}" > "${c}.new" || true
+        # Never install an empty or label-less result over a working boot config —
+        # this is the rescue tool; producing an unbootable machine here is the one
+        # failure it must not have.
+        if [[ -s "${c}.new" ]] && grep -q '^[[:space:]]*LABEL' "${c}.new"; then
+            cat "${c}.new" > "${c}"
+            rm -f "${c}.new"
+            echo "fixed: ${c}  (backup: ${c}.bak-*)"
+            grep -nE '^(DEFAULT|LABEL|APPEND)' "${c}" | sed 's/^/    /'
+        else
+            rm -f "${c}.new"
+            echo "ERR: rewriting ${c} produced an empty/label-less result — left unchanged" >&2
+            rc=1
+        fi
     done
     sync
     echo
     echo "Reboot for this to take effect. Every non-'fresh' label now mounts ${base}/changes."
+    return ${rc}
 }
 
 if [[ "${MODE}" == "fix-persistence" ]]; then
@@ -320,58 +366,139 @@ EOF
     fi
     echo "ISO base dir:   ${iso_base}"
 
+    # ---- which media carry boot files -----------------------------------------
+    # A UEFI install made by this installer keeps a SECOND copy of the kernel:
+    # the installer copies boot/syslinux and EFI/BOOT onto the ESP (a separate
+    # FAT32 partition), and the firmware boots THAT copy. Upgrading only the data
+    # partition leaves the old vmlinuz+initrd in charge of a new base — the
+    # running kernel then has no matching /lib/modules and the system is dead on
+    # arrival. So collect every medium that holds a bootable copy.
+    local -a boot_roots=("${media}")
+    local c r
+    for c in "${ESP_PATHS[@]+"${ESP_PATHS[@]}"}" "${media}/boot/efi" /boot/efi /mnt/*/boot/efi /mnt/*; do
+        [[ -d "${c}" ]] || continue
+        [[ -f "${c}/EFI/BOOT/bootx64.efi" || -d "${c}/boot/syslinux" ]] || continue
+        r="$(cd "${c}" && pwd)"
+        [[ "${r}" == "${media}" ]] && continue
+        # only real second copies: must carry a kernel or the loader
+        [[ -f "${r}/boot/syslinux/vmlinuz" || -f "${r}/EFI/BOOT/bootx64.efi" ]] || continue
+        case " ${boot_roots[*]} " in *" ${r} "*) continue ;; esac
+        boot_roots+=("${r}")
+    done
+
+    if [[ ${#boot_roots[@]} -eq 1 && -d /sys/firmware/efi && ${NO_ESP} -ne 1 && ${FORCE} -ne 1 ]]; then
+        cat >&2 <<EOF
+ERR: this machine booted in UEFI mode and no ESP with PorteuX boot files was found
+     besides ${media}. On a UEFI install the firmware loads vmlinuz/initrd from the
+     ESP, so upgrading only ${media} would leave the OLD kernel driving the NEW
+     base — an unbootable system. Nothing has been changed yet. Do one of:
+       - mount the ESP and point at it:  --esp /mnt/<esp>
+       - mount it anywhere under /mnt and re-run (it is auto-detected)
+       - if this install really boots via BIOS/syslinux only:  --no-esp
+EOF
+        exit 1
+    fi
+    echo "Boot media:     ${boot_roots[*]}"
+
     # ---- back up the current base + boot --------------------------------------
     local stamp bak; stamp="$(date +%Y%m%d-%H%M%S)"
     bak="${porteux_root}/.upgrade-backup-${stamp}"
-    mkdir -p "${bak}/modules" "${bak}/boot-syslinux" "${bak}/EFI-BOOT"
+    mkdir -p "${bak}/modules"
     echo "Backing up old base -> ${bak}"
+
+    # Enough room for the new base before we move the old one out of the way?
+    local need avail
+    need="$(du -sk "${iso_base}" 2>/dev/null | cut -f1 || echo 0)"
+    avail="$(df -Pk "${BASE_MODULES_DIR}" 2>/dev/null | awk 'NR==2{print $4}' || echo 0)"
+    if [[ "${need}" =~ ^[0-9]+$ && "${avail}" =~ ^[0-9]+$ && ${need} -gt 0 ]]; then
+        if (( avail < need * 11 / 10 )); then
+            echo "ERR: not enough free space on $(dirname "${BASE_MODULES_DIR}"): need ~$((need/1024)) MiB (+10%), have $((avail/1024)) MiB." >&2
+            echo "     Nothing has been changed. Free some space (old .upgrade-backup-* dirs?) and re-run." >&2
+            exit 1
+        fi
+    fi
+
+    # Per-medium backup of the boot files, BEFORE anything is overwritten.
+    local slug i=0
+    declare -a bak_slugs=()
+    for r in "${boot_roots[@]}"; do
+        slug="boot-$((i++))"
+        bak_slugs+=("${slug}")
+        mkdir -p "${bak}/${slug}"
+        printf '%s\n' "${r}" > "${bak}/${slug}/.origin"
+        if [[ -d "${r}/boot/syslinux" ]]; then
+            mkdir -p "${bak}/${slug}/boot-syslinux"
+            # cp -rL, never cp -a: an ESP is FAT32 and --preserve=all fails there.
+            cp -rL "${r}/boot/syslinux/vmlinuz" "${bak}/${slug}/boot-syslinux/" 2>/dev/null || true
+            cp -rL "${r}/boot/syslinux/"initrd.* "${bak}/${slug}/boot-syslinux/" 2>/dev/null || true
+            if [[ -f "${r}/boot/syslinux/vmlinuz" && ! -f "${bak}/${slug}/boot-syslinux/vmlinuz" ]]; then
+                echo "ERR: could not back up ${r}/boot/syslinux/vmlinuz — refusing to upgrade without a rollback." >&2
+                exit 1
+            fi
+        fi
+        if [[ -d "${r}/EFI/BOOT" ]]; then
+            mkdir -p "${bak}/${slug}/EFI-BOOT"
+            cp -rL "${r}/EFI/BOOT/." "${bak}/${slug}/EFI-BOOT/" 2>/dev/null || true
+        fi
+    done
+
+    # Rollback text is printed on success AND from the ERR trap, so an abort in
+    # the middle of the swap never leaves the user without recovery instructions.
+    _ub_rollback_hint() {
+        local j=0 rr
+        echo
+        echo "ROLLBACK (restores the previous base and boot files):"
+        echo "  rm -f ${BASE_MODULES_DIR}/000-*.xzm ${BASE_MODULES_DIR}/001-*.xzm ${BASE_MODULES_DIR}/002-*.xzm ${BASE_MODULES_DIR}/003-*.xzm"
+        echo "  mv ${bak}/modules/*.xzm ${BASE_MODULES_DIR}/"
+        for rr in "${boot_roots[@]}"; do
+            echo "  cp -rL ${bak}/boot-${j}/boot-syslinux/. ${rr}/boot/syslinux/  2>/dev/null"
+            echo "  cp -rL ${bak}/boot-${j}/EFI-BOOT/. ${rr}/EFI/BOOT/           2>/dev/null"
+            j=$((j+1))
+        done
+        echo "  sync"
+    }
+
     for f in "${BASE_MODULES_DIR}"/000-*.xzm "${BASE_MODULES_DIR}"/001-*.xzm \
              "${BASE_MODULES_DIR}"/002-*.xzm "${BASE_MODULES_DIR}"/003-*.xzm; do
         [[ -e "$f" ]] && mv "$f" "${bak}/modules/"
     done
-    [[ -d "${media}/boot/syslinux" ]] && cp -a "${media}/boot/syslinux/vmlinuz" "${media}/boot/syslinux/"initrd.* "${bak}/boot-syslinux/" 2>/dev/null || true
-    [[ -d "${media}/EFI/BOOT" ]] && cp -a "${media}/EFI/BOOT/." "${bak}/EFI-BOOT/" 2>/dev/null || true
+    # From here on the install is mid-swap: any abort must print the rollback.
+    trap '_ub_rollback_hint >&2' ERR
 
     # ---- install the new base + boot ------------------------------------------
     echo "Installing new base modules ..."
     cp -v "${iso_base}/"*.xzm "${BASE_MODULES_DIR}/"
 
-    if [[ -d "${media}/boot/syslinux" ]]; then
-        echo "Installing new kernel + initrd ..."
-        cp -v "${_iso_mnt}/boot/syslinux/vmlinuz" "${media}/boot/syslinux/"
-        cp -v "${_iso_mnt}/boot/syslinux/"initrd.* "${media}/boot/syslinux/"
-    else
-        echo "WARN: ${media}/boot/syslinux not found — copy the new vmlinuz/initrd to your boot dir manually."
-    fi
-
-    if [[ -d "${_iso_mnt}/EFI/BOOT" && -d "${media}/EFI/BOOT" ]]; then
-        echo "Refreshing EFI loader ..."
-        cp -rL "${_iso_mnt}/EFI/BOOT/." "${media}/EFI/BOOT/"
-    elif [[ -d "${_iso_mnt}/EFI/BOOT" ]]; then
-        echo "WARN: no ${media}/EFI/BOOT here. If you boot via a separate ESP, copy"
-        echo "      ${_iso_mnt}/EFI/BOOT/* onto that ESP manually."
-    fi
+    for r in "${boot_roots[@]}"; do
+        if [[ -d "${r}/boot/syslinux" ]]; then
+            echo "Installing new kernel + initrd -> ${r}/boot/syslinux ..."
+            cp -rL "${_iso_mnt}/boot/syslinux/vmlinuz" "${r}/boot/syslinux/"
+            cp -rL "${_iso_mnt}/boot/syslinux/"initrd.* "${r}/boot/syslinux/"
+        fi
+        if [[ -d "${_iso_mnt}/EFI/BOOT" && -d "${r}/EFI/BOOT" ]]; then
+            echo "Refreshing EFI loader -> ${r}/EFI/BOOT ..."
+            cp -rL "${_iso_mnt}/EFI/BOOT/." "${r}/EFI/BOOT/"
+        fi
+    done
     # NOTE: porteux.cfg is intentionally KEPT — it holds YOUR DEFAULT/changes/login
     # boot settings. New ISO cheatcodes (e.g. kvm.enable_virt_at_load=0) are not
     # merged; add them by hand if you need them.
 
     sync
+    trap - ERR
     _ub_cleanup
 
     cat <<EOF
 
-Base upgraded for variant '${variant}'. Kept: /porteux/changes (persistence) and
-/porteux/optional. Reboot to load the new base.
-
-If the new base misbehaves (e.g. a stale 2.6 changes overlay clashes with 2.7
-libraries), roll back in one shot:
-  rm -f ${BASE_MODULES_DIR}/000-*.xzm ${BASE_MODULES_DIR}/001-*.xzm ${BASE_MODULES_DIR}/002-*.xzm ${BASE_MODULES_DIR}/003-*.xzm && \\
-    mv ${bak}/modules/*.xzm ${BASE_MODULES_DIR}/ && \\
-    cp -a ${bak}/boot-syslinux/. ${media}/boot/syslinux/ && \\
-    cp -a ${bak}/EFI-BOOT/. ${media}/EFI/BOOT/ 2>/dev/null; sync
-
-Once 2.7 is confirmed good, reclaim space: rm -rf ${bak}
+Base upgraded for variant '${variant}'. Kept: /porteux/changes (persistence),
+/porteux/modules and /porteux/optional. Boot files refreshed on: ${boot_roots[*]}
+Reboot to load the new base.
 EOF
+    echo
+    echo "If the new base misbehaves (e.g. a stale overlay clashes with new libraries):"
+    _ub_rollback_hint
+    echo
+    echo "Once the new release is confirmed good, reclaim space: rm -rf ${bak}"
 }
 
 if [[ "${MODE}" == "upgrade-base" ]]; then
@@ -386,8 +513,8 @@ fi
 # (/porteux/optional): date-stamped assets can sit in either, and replacing a
 # module in place keeps its load semantics unchanged.
 declare -a SCAN_DIRS=()
-if d="$(_find_modules_dir 2>/dev/null)"; then SCAN_DIRS+=("${d}"); fi
-if d="$(_find_dir optional "" OPTIONAL_DIR 2>/dev/null)"; then SCAN_DIRS+=("${d}"); fi
+if d="$(_find_modules_dir)"; then SCAN_DIRS+=("${d}"); fi
+if d="$(_find_dir optional "" OPTIONAL_DIR)"; then SCAN_DIRS+=("${d}"); fi
 if [[ ${#SCAN_DIRS[@]} -eq 0 ]]; then
     cat >&2 <<'EOF'
 ERR: could not locate /porteux/modules or /porteux/optional (no *.xzm found).

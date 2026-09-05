@@ -228,7 +228,14 @@ sudo porteux-update-modules --upgrade-base --iso /mnt/usb  # użyj już zamontow
 Co robi:
 - wykrywa Twój wariant pulpitu z modułu `003-<pulpit>` w `/porteux/base` i bierze pasujące ISO (kde/xfce/lxqt/…),
 - podmienia `000`–`003` + `vmlinuz`/`initrd` (+ `EFI/BOOT`), **zostawia `/porteux/changes` (Twoje dane), `/porteux/modules` i `/porteux/optional`**, zachowuje Twój `porteux.cfg` (czyli `DEFAULT`, `changes=`, `login=`),
-- backup starej bazy → `/porteux/.upgrade-backup-<data>` i wypisuje gotowy **rollback** one-liner.
+- backup starej bazy i plików bootowych → `/porteux/.upgrade-backup-<data>`, a na końcu wypisuje gotowe polecenia **rollbacku** (drukowane także wtedy, gdy upgrade przerwie się w połowie).
+
+> **UEFI: jądro istnieje w DWÓCH kopiach.** Instalacja UEFI trzyma `vmlinuz`/`initrd` zarówno na partycji danych, jak i na ESP — i to z ESP startuje firmware. Podmiana tylko jednej kopii = stare jądro przy nowej bazie, czyli brak pasujących `/lib/modules` i system, który nie wstaje. Helper wykrywa ESP sam (skanuje `/mnt/*`, `/boot/efi`) i aktualizuje obie kopie; gdy maszyna działa w trybie UEFI, a ESP nie da się znaleźć — **przerywa przed tknięciem czegokolwiek** i każe wskazać go jawnie:
+>
+> ```bash
+> sudo porteux-update-modules --upgrade-base --esp /mnt/<esp>   # ESP zamontowany ręcznie
+> sudo porteux-update-modules --upgrade-base --no-esp           # instalacja czysto BIOS-owa
+> ```
 
 **⚠️ Najważniejsze — skąd to odpalić.** Nie nadpiszesz bazy, która jest właśnie w użyciu (moduły `.xzm` działającego systemu są loop-montowane). Helper sprawdza to przez `losetup` i **odmówi na żywym systemie**. Dwa bezpieczne sposoby — **żaden to nie reinstalacja**:
 
@@ -284,7 +291,7 @@ To nie brak pakietu — helper to zwykły skrypt, którego w tej sesji po prostu
    ```bash
    sudo porteux-update-modules --fix-persistence
    ```
-   Dopisuje `changes=/porteux` do każdej etykiety poza `fresh`/`text-fresh`, w każdej znalezionej kopii `porteux.cfg` (partycja danych **i** ESP), z backupem `porteux.cfg.bak-<data>`. Gdy instalka jest zamontowana gdzie indziej: `--cfg /mnt/<dev>/boot/syslinux/porteux.cfg`. Opcjonalnie `LOGIN_USER=<user>` przywraca też autologin.
+   Dopisuje `changes=/porteux` do każdej etykiety poza `fresh`/`text-fresh`, w każdej znalezionej kopii `porteux.cfg` (partycja danych **i** ESP), z backupem `porteux.cfg.bak-<data>`; nigdy nie nadpisze configu wynikiem, w którym zabrakłoby etykiet. Gdy znajdzie więcej niż jedną instalację, wypisze listę i poprosi o `--yes` albo o wskazanie jednej: `--cfg /mnt/<dev>/boot/syslinux/porteux.cfg`. Opcjonalnie `LOGIN_USER=<user>` przywraca też autologin.
 
 **Po boocie root ma hasło `toor`, nie ma mojego konta** — ten sam powód: sesja bez warstwy `changes`. Nie instaluj ponownie, tylko zbootuj etykietę z `changes=/porteux` (albo napraw ją `--fix-persistence`).
 

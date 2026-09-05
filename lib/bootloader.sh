@@ -263,7 +263,11 @@ _update_syslinux_config() {
             sub(/^changes=[^[:space:]]+[[:space:]]*/, "", rest)
             gsub(/[[:space:]]+login=[^[:space:]]+/, "", rest)
             sub(/^login=[^[:space:]]+[[:space:]]*/, "", rest)
-            if (tolower(curlabel) !~ /fresh/) {
+            # *fresh* labels stay stateless — UNLESS the user picked one as the
+            # default boot mode, in which case honoring PERSISTENCE_MODE=changes
+            # matters more (that is what origin/main did, and dropping it here
+            # would boot the installed system with no accounts at all).
+            if (tolower(curlabel) !~ /fresh/ || curlabel==deflabel) {
                 if (login_param != "") { rest=" " login_param rest }
                 if (persist=="changes") { rest=" " changes_param rest }
             }

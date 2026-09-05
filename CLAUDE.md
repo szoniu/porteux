@@ -278,14 +278,16 @@ swaps. The helper covers three scopes:
 |---|---|---|
 | default / `--download` | optional, date-stamped release assets (`05-devel`, `08-multilanguage`, `0050-multilib-lite`) | scans `/porteux/modules` AND `/porteux/optional`, replaces each module in place |
 | `--upgrade-base` | full release bump (2.7 → 2.8): `000`–`003` + kernel/initrd + `EFI/BOOT` from a fresh ISO | `/porteux/base`, keeping `changes/`, `modules/`, `optional/` and the local `porteux.cfg`; old base backed up to `/porteux/.upgrade-backup-<stamp>` |
-| `--fix-persistence` | rescue: re-adds `changes=`/`login=` to every non-`fresh` boot label in every `porteux.cfg` it finds | rewrites the cfg files, `.bak-<stamp>` next to each |
+| `--fix-persistence` | rescue: re-adds `changes=`/`login=` to every non-`fresh` boot label in every `porteux.cfg` it finds | rewrites the cfg files, `.bak-<stamp>` next to each (never installs an empty/label-less result) |
 
 Base modules are NOT published as standalone release assets — they exist only
 inside the ISO, which is why a version bump needs `--upgrade-base` and a ~1 GB
 download (or `--iso` pointing at an already-mounted ISO/USB).
 
 `--upgrade-base` refuses to run while the target base is loop-mounted (checked via
-`losetup`). The two safe routes are (a) boot the installed system with `copy2ram`
+`losetup`), and — on a UEFI-booted machine — while it cannot find the ESP that
+holds the second copy of the kernel (`--esp <path>` names it, `--no-esp` declares
+a BIOS-only install). The two safe routes are (a) boot the installed system with `copy2ram`
 **appended to the label that already carries `changes=/porteux`** — not the stock
 "Copy To RAM" entry — or (b) boot another medium and point at the disk with
 `--base-dir /mnt/<dev>/porteux/base`.
@@ -537,6 +539,14 @@ tail -f /tmp/porteux-installer.log
   reads, via `INCLUDE ../../boot/syslinux/porteux.cfg`) and the one left on the
   data partition. `_bootloader_install_efi` updates both — a stale second copy
   reads like the install lost its persistence.
+- **A UEFI install has TWO copies of the kernel**: `_bootloader_install_efi`
+  copies `boot/syslinux` (vmlinuz + initrd + porteux.cfg) onto the ESP, and the
+  firmware boots THAT copy — the data partition's copy is only a fallback. Any
+  tool that swaps the base must refresh both, or the machine boots an old kernel
+  against a new base (no matching `/lib/modules`, i.e. dead). `--upgrade-base`
+  therefore collects every medium under `/mnt/*` (plus `--esp`) that carries
+  `EFI/BOOT/bootx64.efi` or `boot/syslinux/vmlinuz`, and refuses to run on a
+  UEFI-booted machine when it can find only one.
 - **`grep -oP` is GNU-only**: on a BSD/busybox grep it fails and yields an empty
   list, which reads as "the release has no assets". Post-install tooling that may
   run from a foreign live ISO uses `sed`-based extraction instead.
