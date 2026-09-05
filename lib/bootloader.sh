@@ -68,11 +68,17 @@ _bootloader_install_efi() {
     fi
 
     # Apply persistence + default boot mode + UMPC quirks to the cfg the firmware
-    # actually reads (the one on the ESP).
+    # actually reads (the one on the ESP) AND to the copy left on the data
+    # partition. Keeping both in sync matters: the on-disk copy is what a rescue
+    # boot, a BIOS fallback or `--fix-persistence` inspects, and a stale copy
+    # there (upstream's changes=EXIT:) reads like the install lost persistence.
     if [[ -d "${esp}/boot/syslinux" ]]; then
         _update_syslinux_config "${esp}/boot/syslinux"
     else
         ewarn "No boot/syslinux on ESP — boot config not applied"
+    fi
+    if [[ -d "${target}/boot/syslinux" && "${esp}/boot/syslinux" != "${target}/boot/syslinux" ]]; then
+        _update_syslinux_config "${target}/boot/syslinux"
     fi
 
     # Register a firmware boot entry (best-effort; the removable-media fallback
@@ -167,16 +173,29 @@ _bootloader_install_bios() {
 # _update_syslinux_config — Apply persistence, default boot mode, and UMPC panel
 # rotation to PorteuX's syslinux config (porteux.cfg) in one awk pass.
 #
-# Grounded in the real upstream porteux.cfg, which:
+# Grounded in the real upstream porteux.cfg (verified against
+# github.com/porteux/porteux iso/boot/syslinux/porteux.cfg), which:
 #   - ships NO `DEFAULT` directive (it relies on first-label autoboot), and the
 #     labels are: graphical / fresh / copy2ram / text / text-fresh (no "normal");
-#   - puts `changes=EXIT:/porteux` only on the `graphical` (and copy2ram) labels.
+#   - puts `changes=EXIT:/porteux` on `graphical` ONLY. `copy2ram` is bare
+#     (`APPEND copy2ram kvm.enable_virt_at_load=0`) and `text` is bare too —
+#     neither carries any changes= at all.
 # So we: emit a real `DEFAULT <label>` for the chosen BOOT_MODE; for persistence
-# `changes` ensure the chosen default label carries changes=/<base> (plain folder
-# mode — continuous save for a permanent install, unlike upstream's live-only
-# EXIT: buffer); for `none` strip changes= from every label (truly immutable);
-# and prepend the UMPC
-# rotation cmdline to every APPEND. The pass is idempotent (safe on resume).
+# `changes` put changes=/<base> (plain folder mode — continuous save for a
+# permanent install, unlike upstream's live-only EXIT: buffer) on EVERY
+# persistent label, not just the default one; for `none` strip changes= from
+# every label (truly immutable); and prepend the UMPC rotation cmdline to every
+# APPEND. The pass is idempotent (safe on resume).
+#
+# WHY every label and not just DEFAULT: the installed system's whole
+# configuration — user accounts (rc.porteux-setup), passwords, hostname, locale,
+# sudoers/polkit drop-ins and /usr/local/bin/porteux-update-modules — lives in
+# the AUFS overlay under /porteux/changes. A label without `changes=` boots a
+# system where none of it exists (root back to the stock `toor`, helper missing
+# → "porteux-update-modules: command not found"). That bites exactly when the
+# user follows the documented base-upgrade route: pick `Copy To RAM` from the
+# boot menu to free the on-disk modules. The `fresh` labels are the deliberate
+# exception — `baseonly norootcopy` means "stateless by design".
 _update_syslinux_config() {
     local syslinux_dir="$1"
 
@@ -234,14 +253,17 @@ _update_syslinux_config() {
             if (umpc != "" && rest !~ /panel_orientation=/) {
                 rest=" " umpc rest
             }
-            # Persistence + login cheatcode reconciled only on the chosen default
-            # label (other labels keep upstream behavior). Idempotent strip-then-
-            # prepend so re-runs / resumes never accumulate duplicates.
-            if (curlabel==deflabel) {
-                gsub(/[[:space:]]+changes=[^[:space:]]+/, "", rest)
-                sub(/^changes=[^[:space:]]+[[:space:]]*/, "", rest)
-                gsub(/[[:space:]]+login=[^[:space:]]+/, "", rest)
-                sub(/^login=[^[:space:]]+[[:space:]]*/, "", rest)
+            # Persistence + login cheatcode reconciled on EVERY label that is
+            # meant to boot the installed system with its overlay. Stripping is
+            # unconditional (so `fresh` loses upstream leftovers and PERSISTENCE
+            # =none really strips every label); re-adding skips *fresh* labels,
+            # whose whole point is a stateless `baseonly norootcopy` session.
+            # Idempotent strip-then-prepend: re-runs / resumes never accumulate.
+            gsub(/[[:space:]]+changes=[^[:space:]]+/, "", rest)
+            sub(/^changes=[^[:space:]]+[[:space:]]*/, "", rest)
+            gsub(/[[:space:]]+login=[^[:space:]]+/, "", rest)
+            sub(/^login=[^[:space:]]+[[:space:]]*/, "", rest)
+            if (tolower(curlabel) !~ /fresh/) {
                 if (login_param != "") { rest=" " login_param rest }
                 if (persist=="changes") { rest=" " changes_param rest }
             }

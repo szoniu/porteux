@@ -3,23 +3,40 @@
 source "${LIB_DIR}/protection.sh"
 
 # modules_list_installed — List XZM modules on the target
+# base/ holds the release's own modules (000-003, straight from the ISO),
+# modules/ holds extras we or the user added — both auto-load, so both are shown.
 modules_list_installed() {
     local target="${MOUNTPOINT:?MOUNTPOINT not set}"
+    local base_dir="${target}/${PORTEUX_BASE_MODULES_DIR}"
     local modules_dir="${target}/${PORTEUX_MODULES_DIR}"
 
-    if [[ ! -d "${modules_dir}" ]]; then
-        ewarn "Modules directory not found: ${modules_dir}"
+    if [[ ! -d "${base_dir}" && ! -d "${modules_dir}" ]]; then
+        ewarn "Modules directory not found: ${base_dir}"
         return 1
     fi
 
-    einfo "Installed base modules:"
-    local f
-    for f in "${modules_dir}"/*.xzm; do
-        [[ -f "${f}" ]] || continue
-        local size
-        size=$(du -h "${f}" | awk '{print $1}')
-        einfo "  $(basename "${f}") (${size})"
-    done
+    local f size
+    if [[ -d "${base_dir}" ]]; then
+        einfo "Base modules (${PORTEUX_BASE_MODULES_DIR}/):"
+        for f in "${base_dir}"/*.xzm; do
+            [[ -f "${f}" ]] || continue
+            size=$(du -h "${f}" | awk '{print $1}')
+            einfo "  $(basename "${f}") (${size})"
+        done
+    fi
+
+    if [[ -d "${modules_dir}" ]]; then
+        local has_extra=0
+        for f in "${modules_dir}"/*.xzm; do
+            [[ -f "${f}" ]] || continue
+            if [[ ${has_extra} -eq 0 ]]; then
+                einfo "Auto-loading extra modules (${PORTEUX_MODULES_DIR}/):"
+                has_extra=1
+            fi
+            size=$(du -h "${f}" | awk '{print $1}')
+            einfo "  $(basename "${f}") (${size})"
+        done
+    fi
 
     local optional_dir="${target}/${PORTEUX_OPTIONAL_DIR}"
     if [[ -d "${optional_dir}" ]]; then

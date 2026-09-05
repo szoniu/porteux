@@ -496,15 +496,47 @@ system_finalize() {
     # Create optional directories
     mkdir -p "${target}/${PORTEUX_OPTIONAL_DIR}"
 
-    # Install the post-install module-update helper so the user can run
-    # `porteux-update-modules` after the first boot without a manual curl
-    # dance (PorteuX squashfs doesn't include /usr/local/bin by default).
+    # Install the post-install module-update helper TWICE, on purpose:
+    #   1. ${config_root}/usr/local/bin — lands in PATH of the booted system
+    #      (PorteuX squashfs has no /usr/local/bin of its own). With
+    #      PERSISTENCE_MODE=changes this is inside the AUFS overlay, so it only
+    #      exists in sessions that mount that overlay.
+    #   2. <media>/porteux/porteux-update-modules — plain file on the partition,
+    #      outside any overlay. Reachable from ANY boot (a stateless `fresh`
+    #      session, another live ISO, a rescue shell) as
+    #      /mnt/<dev>/porteux/porteux-update-modules. This is the copy that saves
+    #      the base-upgrade route when the running session has no persistence.
     local helper_src="${SCRIPT_DIR}/scripts/porteux-update-modules.sh"
     if [[ -f "${helper_src}" ]]; then
         local helper_dst="${config_root}/usr/local/bin"
         mkdir -p "${helper_dst}"
         install -m 755 "${helper_src}" "${helper_dst}/porteux-update-modules"
         einfo "Installed porteux-update-modules to /usr/local/bin"
+
+        install -m 755 "${helper_src}" "${target}/${PORTEUX_BASE_DIR}/porteux-update-modules"
+        einfo "Installed overlay-independent copy: /${PORTEUX_BASE_DIR}/porteux-update-modules"
+
+        cat > "${target}/${PORTEUX_BASE_DIR}/UPDATE-README.txt" <<'HELPEREOF'
+PorteuX update helper — where it lives
+======================================
+
+In the running system (needs the persistence overlay mounted):
+    porteux-update-modules                  # list outdated optional modules
+    porteux-update-modules --download       # fetch newer optional modules
+    sudo porteux-update-modules --upgrade-base   # full release bump from a new ISO
+
+Always available, no overlay required (this partition, mounted under /mnt/<dev>):
+    bash /mnt/<dev>/porteux/porteux-update-modules --help
+
+"porteux-update-modules: command not found" means the session you booted has no
+persistence layer (no changes= on that boot label). Check with:
+    cat /proc/cmdline
+Then either boot the label that carries changes=/porteux, or run the copy above
+by absolute path. `--fix-persistence` repairs boot labels that lost changes=.
+HELPEREOF
+    else
+        ewarn "Helper source missing: ${helper_src}"
+        ewarn "Post-install updates will need a manual download of scripts/porteux-update-modules.sh"
     fi
 
     # Sync filesystem

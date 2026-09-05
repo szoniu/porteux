@@ -43,6 +43,18 @@ readonly -a PORTEUX_OPTIONAL_MODULES=(
 
 # PorteuX directory structure on target
 readonly PORTEUX_BASE_DIR="porteux"
+# THREE distinct module directories — do not conflate them (upstream
+# boot/docs/cheatcodes.txt: `baseonly` = "load only the default modules found in
+# /porteux/base"; `noload` "affects all modules ... including /porteux/base and
+# /porteux/modules"; `load=` pulls from /porteux/optional):
+#   base/     — the release's base modules shipped inside the ISO (000-kernel,
+#               001-core, 002-gui, 002-xtra, 003-<desktop>). Auto-loaded. Only
+#               a full-release upgrade (new ISO) replaces these.
+#   modules/  — extra modules the user keeps; ALSO auto-loaded at every boot,
+#               in every persistence mode. This is where the installer drops
+#               08-multilanguage and any wizard-selected optional module.
+#   optional/ — parked modules, NOT auto-loaded; need `activate` or `load=`.
+readonly PORTEUX_BASE_MODULES_DIR="${PORTEUX_BASE_DIR}/base"
 readonly PORTEUX_MODULES_DIR="${PORTEUX_BASE_DIR}/modules"
 readonly PORTEUX_OPTIONAL_DIR="${PORTEUX_BASE_DIR}/optional"
 # Persistence: the boot parameter points at the BASE directory (changes=/porteux,
