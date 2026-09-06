@@ -47,6 +47,9 @@ lib/                    — Library modules (NEVER execute directly)
 ├── persistence.sh      — persistence_setup (_setup_persistent_changes), persistence_get_boot_param, persistence_clean
 ├── system.sh           — system_configure (hostname/timezone/locale/keymap), system_create_users (first-boot script via rc.local), system_finalize
 ├── hooks.sh            — maybe_exec 'before_X' / 'after_X'
+├── umpc.sh             — UMPC quirks (GPD Pocket/Win, Chuwi MiniBook X): panel
+│                         rotation cmdline, ALC287 unmute, SDDM greeter rotation,
+│                         GPD fan note; _umpc_config_root picks changes/ vs root
 └── preset.sh           — preset_export/import (hardware overlay)
 
 tui/                    — TUI screens
@@ -58,6 +61,8 @@ tui/                    — TUI screens
 ├── swap_config.sh      — screen_swap_config: none/partition/file
 ├── desktop_select.sh   — screen_desktop_select: 8 desktop variants (kde/xfce/lxqt/cinnamon/mate/gnome/lxde/cosmic)
 ├── gpu_config.sh       — screen_gpu_config: nvidia module yes/no, AMD/Intel info
+├── display_server.sh   — screen_display_server: auto/wayland/x11 (COSMIC is
+│                         Wayland-only; XFCE/MATE/Cinnamon/LXDE are X11-only)
 ├── persistence_config.sh — screen_persistence_config: changes (persistent) / none (immutable)
 ├── boot_mode_config.sh — screen_boot_mode_config: normal/copy2ram/fresh/text
 ├── module_select.sh    — screen_module_select: 05-devel, 08-multilanguage, 0050-multilib-lite
@@ -74,12 +79,38 @@ data/                   — Static databases + bundled assets
 ├── dialogrc            — Dark TUI theme
 └── gum.tar.gz          — Bundled gum v0.17.0 binary (static ELF x86-64)
 
+scripts/                — Post-install tooling shipped onto the target
+└── porteux-update-modules.sh — optional-module updates (--download), full base
+                          upgrade from a new ISO (--upgrade-base), and boot-label
+                          persistence repair (--fix-persistence). Installed by
+                          system_finalize into BOTH the overlay (/usr/local/bin)
+                          and the media root (/porteux/porteux-update-modules).
+
 presets/                — Example configurations
 tests/                  — Tests (bash, standalone)
 hooks/                  — *.sh.example
+docs/                   — TESTING-NOTES.md (shared dialog.sh conventions, gum/TERM
+                          quirks, real-hardware test loop)
 ```
 
+### CLI
+
+| Flag | Effect |
+|---|---|
+| (none) | full run: wizard → install |
+| `--configure` | wizard only, write the config file, do not install |
+| `--install` | install from an existing config, no wizard |
+| `--resume` | scan disks, resume from the last reached checkpoint |
+| `--config FILE` | use FILE instead of the default config path |
+| `--dry-run` | no destructive operation is executed |
+| `--force` | skip confirmations |
+| `--non-interactive` | never prompt (implies decisions come from the config) |
+| `--help` / `-h` | usage |
+
 ### TUI screen conventions
+
+The wizard has **17 screens** (order defined by `register_wizard_screens` in
+`install.sh`), with `screen_display_server` as the 9th.
 
 Each screen is a `screen_*()` function that returns:
 - `0` (`TUI_NEXT`) — proceed forward
@@ -116,9 +147,24 @@ All config variables are defined in `CONFIG_VARS[]` in `lib/constants.sh`:
 | `USERNAME` | string | Regular user login |
 | `USER_PASSWORD_HASH` | SHA-512 hash | User password |
 | `USER_GROUPS` | comma-separated | e.g. `wheel,audio,video` |
+| `DISPLAY_SERVER` | auto/wayland/x11 | Session type (COSMIC is Wayland-only; XFCE/MATE/Cinnamon/LXDE are X11-only) |
 | `GPU_VENDOR` | nvidia/amd/intel/none/unknown | Detected GPU |
 | `ESP_PARTITION` | /dev/sdX1 | EFI System Partition |
+| `ESP_REUSE` | yes/no | Reuse an existing ESP (dual-boot) instead of creating one |
 | `ROOT_PARTITION` | /dev/sdX2 | Root partition |
+| `SWAP_PARTITION` | /dev/sdX3 | Swap partition (when `SWAP_TYPE=partition`) |
+
+`CONFIG_VARS[]` holds **58** names in total — the table above lists the ones a
+human sets. The rest are detection results persisted for resume/preset, grouped in
+`lib/constants.sh` exactly as below; read that file rather than duplicating them
+here:
+
+| Group | Variables |
+|---|---|
+| GPU detail | `GPU_DEVICE_ID`, `GPU_DEVICE_NAME`, `GPU_DRIVER`, `HYBRID_GPU`, `IGPU_VENDOR`, `IGPU_DEVICE_NAME`, `DGPU_VENDOR`, `DGPU_DEVICE_NAME` |
+| Hardware detection | `ASUS_ROG_DETECTED`, `WINDOWS_DETECTED`, `LINUX_DETECTED`, `DETECTED_OSES_SERIALIZED`, `BLUETOOTH_DETECTED`, `FINGERPRINT_DETECTED`, `THUNDERBOLT_DETECTED`, `SENSORS_DETECTED`, `WEBCAM_DETECTED`, `WWAN_DETECTED`, `SURFACE_DETECTED`, `SURFACE_MODEL` |
+| UMPC | `UMPC_DETECTED`, `UMPC_VENDOR`, `UMPC_MODEL`, `UMPC_PANEL_ORIENTATION`, `UMPC_VIDEO_CONNECTOR`, `UMPC_FBCON_ROTATE`, `UMPC_ALC287_QUIRK`, `UMPC_GPD_FAN` |
+| Dual-boot | `SHRINK_PARTITION`, `SHRINK_PARTITION_FSTYPE`, `SHRINK_NEW_SIZE_MIB` |
 
 ### PorteuX-specific patterns
 
@@ -135,13 +181,21 @@ These are pre-built and included in the ISO. The installer simply extracts them 
 #### AUFS persistence
 
 PorteuX uses AUFS (Another Union File System) to layer squashfs modules. Changes go to a writable overlay:
-- `changes=EXIT:/porteux` — boot parameter for persistence. The param points at
-  the BASE dir `/porteux`; PorteuX itself creates a `changes/` subdirectory inside
-  it for the AUFS overlay. The installer therefore pre-seeds config into
-  `/porteux/changes` (= `PORTEUX_CHANGES_DIR`) while the boot param uses `/porteux`
+- `changes=/porteux` — boot parameter the installer writes: plain folder mode,
+  continuous save, survives a crash. The param points at the BASE dir `/porteux`;
+  PorteuX itself creates a `changes/` subdirectory inside it for the AUFS overlay.
+  The installer therefore pre-seeds config into `/porteux/changes`
+  (= `PORTEUX_CHANGES_DIR`) while the boot param uses `/porteux`
   (= `PORTEUX_PERSISTENCE_DIR`). These two MUST stay distinct.
-- `baseonly norootcopy` — immutable mode (no persistence)
-- `copy2ram` — load all modules to RAM
+- `changes=EXIT:/porteux` — upstream's LIVE-USB default: RAM buffer flushed to
+  disk only at a clean shutdown. Wrong for a permanent install; the installer
+  rewrites it.
+- `baseonly norootcopy` — immutable mode (no persistence); upstream's `fresh` and
+  `text-fresh` labels. The installer deliberately leaves these stateless.
+- `copy2ram` — load all modules to RAM. **Orthogonal to persistence**: it must be
+  combined with `changes=`, otherwise the session boots with no overlay at all
+  (no user accounts, no /usr/local/bin helper — the stock "Copy To RAM" menu entry
+  is exactly that trap).
 
 #### Sysvinit (not systemd, runit, or dinit)
 
@@ -171,18 +225,37 @@ The installer resolves the official PorteuX ISO for the selected desktop variant
 ```
 /boot/syslinux/vmlinuz      — Linux kernel
 /boot/syslinux/initrd.zst   — Initial ramdisk (zstd compressed)
-/boot/syslinux/porteux.cfg  — Syslinux configuration
+/boot/syslinux/porteux.cfg  — Syslinux configuration (single source for BIOS+EFI)
 /EFI/BOOT/bootx64.efi       — EFI bootloader (syslinux; lowercase filename)
-/porteux/modules/            — Base system modules (auto-loaded)
-/porteux/optional/           — Optional modules (manual activation)
-/porteux/changes/            — Persistence overlay directory
+/porteux/base/              — RELEASE base modules from the ISO: 000-kernel,
+                              001-core, 002-gui, 002-xtra, 003-<desktop>.
+                              Auto-loaded. Only a new ISO replaces these.
+/porteux/modules/           — Extra modules (installer drops 08-multilanguage and
+                              wizard-selected optional modules here). ALSO
+                              auto-loaded at every boot, in every persistence mode.
+/porteux/optional/          — Parked modules: NOT auto-loaded, need `activate`
+                              or the `load=` cheatcode.
+/porteux/changes/           — Persistence overlay directory
+/porteux/porteux-update-modules — overlay-independent copy of the update helper
+/porteux/porteux.cfg        — upstream global cheatcode file (applies to ALL boot
+                              profiles; must not be deleted or the system won't boot)
 ```
+
+The three module directories are documented in upstream `boot/docs/cheatcodes.txt`
+(`baseonly` = "only the default modules found in /porteux/base"; `noload` "affects
+all modules ... including /porteux/base and /porteux/modules"; `load=` reads
+/porteux/optional). `PORTEUX_BASE_MODULES_DIR`, `PORTEUX_MODULES_DIR` and
+`PORTEUX_OPTIONAL_DIR` in `lib/constants.sh` map 1:1 onto them — conflating base/
+with modules/ is what made `--upgrade-base` fail with "is this a PorteuX install?".
 
 ### Checkpoints
 
 `checkpoint_set "name"` creates a file in `$CHECKPOINT_DIR`. `checkpoint_reached "name"` checks for it. After mounting the target disk, checkpoints migrate to `${MOUNTPOINT}/tmp/porteux-installer-checkpoints/`.
 
-Phases: preflight → disks → iso_download → iso_verify → iso_extract → bootloader → persistence → optional_modules → system_config → users → finalize
+Phases (12, `CHECKPOINTS[]` in `lib/constants.sh` == `INSTALL_PHASES[]` in
+`tui/progress.sh`): preflight → disks → iso_download → iso_verify → iso_extract →
+bootloader → persistence → optional_modules → system_config → users → umpc_quirks
+→ finalize
 
 ### Two-phase disk operations
 
@@ -195,6 +268,29 @@ Identical to Void installer: `disk_plan_auto()` / `disk_plan_dualboot()` → `di
 ### gum TUI backend
 
 Bundled in `data/gum.tar.gz`. Priority: gum > dialog > whiptail. Static binary, zero dependencies.
+
+## Post-install updates (`scripts/porteux-update-modules.sh`)
+
+PorteuX has no package manager for the system itself, so updates are module
+swaps. The helper covers three scopes:
+
+| Mode | Scope | Where it writes |
+|---|---|---|
+| default / `--download` | optional, date-stamped release assets (`05-devel`, `08-multilanguage`, `0050-multilib-lite`) | scans `/porteux/modules` AND `/porteux/optional`, replaces each module in place |
+| `--upgrade-base` | full release bump (2.7 → 2.8): `000`–`003` + kernel/initrd + `EFI/BOOT` from a fresh ISO | `/porteux/base`, keeping `changes/`, `modules/`, `optional/` and the local `porteux.cfg`; old base backed up to `/porteux/.upgrade-backup-<stamp>` |
+| `--fix-persistence` | rescue: re-adds `changes=`/`login=` to every non-`fresh` boot label in every `porteux.cfg` it finds | rewrites the cfg files, `.bak-<stamp>` next to each (never installs an empty/label-less result) |
+
+Base modules are NOT published as standalone release assets — they exist only
+inside the ISO, which is why a version bump needs `--upgrade-base` and a ~1 GB
+download (or `--iso` pointing at an already-mounted ISO/USB).
+
+`--upgrade-base` refuses to run while the target base is loop-mounted (checked via
+`losetup`), and — on a UEFI-booted machine — while it cannot find the ESP that
+holds the second copy of the kernel (`--esp <path>` names it, `--no-esp` declares
+a BIOS-only install). The two safe routes are (a) boot the installed system with `copy2ram`
+**appended to the label that already carries `changes=/porteux`** — not the stock
+"Copy To RAM" entry — or (b) boot another medium and point at the disk with
+`--base-dir /mnt/<dev>/porteux/base`.
 
 ## Testing plan
 
@@ -219,7 +315,7 @@ These tests should be run in a QEMU/KVM or VirtualBox VM with networking:
 #### Test 1: Full dry-run wizard
 ```bash
 ./install.sh --dry-run
-# Verify: all 16 TUI screens render, config file is generated, no disk operations
+# Verify: all 17 TUI screens render, config file is generated, no disk operations
 ```
 
 #### Test 2: Config round-trip
@@ -294,16 +390,15 @@ git clone https://github.com/szoniu/porteux.git && cd porteux
 #### Test 10: Optional modules
 ```bash
 # Install with ENABLE_DEVEL_MODULE=yes
-# Verify: 05-devel.xzm present in /porteux/optional/
-# Activate: activate 05-devel.xzm
-# Verify: gcc --version works
+# Verify: 05-devel.xzm present in /porteux/modules/ (auto-loading dir, no activate)
+# Verify after reboot: gcc --version works out of the box
 ```
 
 #### Test 11: NVIDIA module download
 ```bash
 # Install on VM with NVIDIA GPU passthrough (or just test download)
 # Select NVIDIA_MODULE=yes
-# Verify: NVIDIA driver module downloaded to /porteux/optional/ (upstream ships it as nvidia-driver-current.zip → extracted to .xzm)
+# Verify: NVIDIA driver module downloaded to /porteux/modules/ (upstream ships it as nvidia-driver-current.zip → extracted to .xzm)
 ```
 
 #### Test 12: User setup on first boot
@@ -426,6 +521,39 @@ tail -f /tmp/porteux-installer.log
 - **Non-base locales need a module**: base glibc only has `C`/`en_US`. Selecting any other locale (pl_PL, de_DE, en_GB...) auto-downloads `08-multilanguage` (glibc-i18n) into the auto-loading `/porteux/modules/` (see `modules_ensure_locale_support`).
 - **Dual-boot root partition**: never guess the partition number after `sfdisk --append` (GPT gaps make `count+1` point at an existing partition) — detect the new device by diffing the partition list before/after, then format.
 - **FAT32 filesystem option**: PorteuX can run from FAT32 (maximum USB portability), but this limits file sizes to 4 GB
+- **`changes=` must land on EVERY persistent boot label, not just DEFAULT**: the
+  overlay holds the entire installed configuration (accounts, sudoers/polkit,
+  autologin, `/usr/local/bin/porteux-update-modules`). Upstream ships `changes=`
+  on `graphical` only — `copy2ram` and `text` are bare. `_update_syslinux_config`
+  therefore strips unconditionally and re-adds `changes=`/`login=` on every label
+  whose name does not match `/fresh/`. Booting a label without `changes=` looks
+  like a broken install: root back at the stock `toor`, helper "command not
+  found". `scripts/porteux-update-modules.sh --fix-persistence` repairs an
+  install made by an older version of this installer.
+- **The update helper is installed twice, on purpose**: `system_finalize` writes
+  it to `${config_root}/usr/local/bin` (inside the overlay → only visible when the
+  overlay is mounted) AND to `${target}/porteux/porteux-update-modules` (plain
+  file on the media → reachable from any session, including a rescue live ISO).
+  Anything the installer seeds into `config_root` shares the first limitation.
+- **EFI mode has TWO copies of `porteux.cfg`**: the ESP one (what the firmware
+  reads, via `INCLUDE ../../boot/syslinux/porteux.cfg`) and the one left on the
+  data partition. `_bootloader_install_efi` updates both — a stale second copy
+  reads like the install lost its persistence.
+- **A UEFI install has TWO copies of the kernel**: `_bootloader_install_efi`
+  copies `boot/syslinux` (vmlinuz + initrd + porteux.cfg) onto the ESP, and the
+  firmware boots THAT copy — the data partition's copy is only a fallback. Any
+  tool that swaps the base must refresh both, or the machine boots an old kernel
+  against a new base (no matching `/lib/modules`, i.e. dead). `--upgrade-base`
+  therefore collects every medium under `/mnt/*` (plus `--esp`) that carries
+  `EFI/BOOT/bootx64.efi` or `boot/syslinux/vmlinuz`, and refuses to run on a
+  UEFI-booted machine when it can find only one.
+- **`grep -oP` is GNU-only**: on a BSD/busybox grep it fails and yields an empty
+  list, which reads as "the release has no assets". Post-install tooling that may
+  run from a foreign live ISO uses `sed`-based extraction instead.
+- **`[[ ... ]] && { ... }` as a function's last statement returns 1**: under
+  `set -e` that aborts the caller. It bit `_ub_cleanup`, which runs right before
+  the base-upgrade success banner — the base was swapped but the rollback
+  instructions never printed. Always close such functions with `return 0`.
 
 ## How to add a new TUI screen
 
